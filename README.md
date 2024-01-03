@@ -13,11 +13,7 @@ git clone https://github.com/saeejithnair/elastic-nerf.git
 ### Update submodules
 
 ```
-
-```
-
 git submodule update --init --recursive
-
 ```
 
 ### Initialize Workspace
@@ -25,9 +21,7 @@ git submodule update --init --recursive
 Run the initialization script at the root of the directory. This will generate an **.env** file in the repo root which will be sourced by docker compose and hold your user specific configurations and secret keys for logging and tracking experiments.
 
 ```
-
 ./initialize.sh
-
 ```
 
 ## Build Process
@@ -41,11 +35,9 @@ Elastic-NeRF can be run either in a docker container or in a conda environment.
 By default, the container is built for CUDA Architecture 86 which supports the Nvidia RTX A6000 GPU. The container can be easily customized for other architectures by prefixing any docker compose command with `CUDA_ARCHITECTURES=ARCH_ID`. For example, to build a container for a 75 series architecture, you can set the environment variable at build time as follows (various examples):
 
 ```
-
 CUDA_ARCHITECTURES=75 docker compose build gen-nerf
 CUDA_ARCHITECTURES=75 docker compose build gen-nerf-dev
 CUDA_ARCHITECTURES=75 docker compose up --build gen-nerf-dev
-
 ```
 
 #### Modes
@@ -63,25 +55,19 @@ The container can be built in one of two modes: _developer mode_ or _serving mod
 To just build the non-dev service, run
 
 ```
-
 docker compose build elastic-nerf
-
 ```
 
 To build and start the service as a detached instance, and then run a specific command
 
 ```
-
 docker compose run -d --build elastic-nerf {your command here}
-
 ```
 
 A common use case is to start a pre-configured WandB sweep on a specific GPU. This can be done by running:
 
 ```
-
 GPU_IDS=0 CUDA_ARCHITECTURES=75 docker compose run -d --build elastic-nerf wandb agent wandb-entity-name/elastic-nerf/abc0defg
-
 ```
 
 ### Building Conda Environment
@@ -93,17 +79,11 @@ TODO
 Nerfstudio hosts a number of NeRF related datasets which can be easily downloaded by running Nerfstudio's `ns-download` command from within a container or environment. E.g. the following command downloads the Blender Synthetic dataset.
 
 ```
-
 ns-download-data blender --save-dir /home/user/shared/nerfstudio/data/
-
 ```
 
 You can also download the dataset to a filesystem drive that has been mounted to a container running in serving mode.
 
 ```
-
 docker compose run -d --build elastic-nerf ns-download-data blender --save-dir /home/user/shared/nerfstudio/data/
-
-```
-
 ```
