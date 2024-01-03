@@ -35,9 +35,9 @@ Elastic-NeRF can be run either in a docker container or in a conda environment.
 By default, the container is built for CUDA Architecture 86 which supports the Nvidia RTX A6000 GPU. The container can be easily customized for other architectures by prefixing any docker compose command with `CUDA_ARCHITECTURES=ARCH_ID`. For example, to build a container for a 75 series architecture, you can set the environment variable at build time as follows (various examples):
 
 ```
-CUDA_ARCHITECTURES=75 docker compose build gen-nerf
-CUDA_ARCHITECTURES=75 docker compose build gen-nerf-dev
-CUDA_ARCHITECTURES=75 docker compose up --build gen-nerf-dev
+CUDA_ARCHITECTURES=75 docker compose build elastic-nerf
+CUDA_ARCHITECTURES=75 docker compose build elastic-nerf-dev
+CUDA_ARCHITECTURES=75 docker compose up --build elastic-nerf-dev
 ```
 
 #### Modes
