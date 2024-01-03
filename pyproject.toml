@@ -1,0 +1,14 @@
+[project]
+name = "elastic_nerf"
+version = "0.1.0"
+description = "Elastic Neural Radiance Fields."
+requires-python = "~=3.9"
+authors = [
+    {name = "Saeejith Nair", email = "smnair@uwaterloo.ca"}
+]
+
+dependencies = []
+
+[tool.setuptools.packages.find]
+include = ["elastic_nerf*"]
+

@@ -1,0 +1,3 @@
+[submodule "third-party/gonas"]
+	path = third-party/gonas
+	url = git@github.com:saeejithnair/gonas.git
