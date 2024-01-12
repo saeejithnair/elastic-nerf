@@ -226,7 +226,7 @@ echo "FIXGID=$FIXGID" >> ".env"
 
 if [ $WANDB_MODE == "online" ]; then
     echo "WANDB_KEY=${wandb_key}" >> ".env"
-    echo "WANDB_ENTITY=uwvip-nas" >> ".env"
+    echo "WANDB_ENTITY=saeejithn" >> ".env"
 fi
 
 if [ $HF_MODE == "online" ]; then

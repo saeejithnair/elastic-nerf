@@ -1,6 +1,6 @@
 name: ngp_prop-blender
-project: granular-nerf
-entity: uwvip-nas
+project: elastic-nerf
+entity: saeejithn
 method: grid
 description: This performs a sweep over blender dataset with nerfacc accelerated ngp occ model.
 parameters:

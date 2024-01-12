@@ -50,7 +50,7 @@ class TrainerConfig(InstantiateConfig):
 
     exp_name: str = field(default_factory=lambda: time.strftime("%Y-%m-%d-%H-%M-%S"))
     """The name of the experiment."""
-    project_name: str = "granular-nerf"
+    project_name: str = "elastic-nerf"
     """The name of the project."""
     data_root: Path = field(
         default_factory=lambda: Path(os.environ["NERFSTUDIO_CACHE_DIR"])

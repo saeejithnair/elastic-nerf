@@ -195,7 +195,7 @@ class NGPOccTrainerConfig(InstantiateConfig):
 
     exp_name: str = field(default_factory=lambda: time.strftime("%Y-%m-%d-%H-%M-%S"))
     """The name of the experiment."""
-    project_name: str = "granular-nerf"
+    project_name: str = "elastic-nerf"
     """The name of the project."""
     dataset: Literal["blender", "mipnerf360"] = "blender"
     """Which dataset to use."""

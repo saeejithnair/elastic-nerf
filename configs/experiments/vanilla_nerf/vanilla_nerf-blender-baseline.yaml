@@ -1,6 +1,6 @@
 name: vanilla_nerf-blender-baseline
-project: granular-nerf
-entity: uwvip-nas
+project: elastic-nerf
+entity: saeejithn
 method: grid
 description: This performs a sweep over blender dataset with baseline nerfacc accelerated vanilla nerf model.
 parameters:

@@ -1,6 +1,6 @@
 name: ngp_occ-mipnerf360-four_granularities-granular_norm
-project: granular-nerf
-entity: uwvip-nas
+project: elastic-nerf
+entity: saeejithn
 method: grid
 description: This performs a sweep over mipnerf360 dataset with full size nerfacc accelerated elastic ngp occ model with and without granular norm jointly optimized with 6 granularities.
 parameters:
