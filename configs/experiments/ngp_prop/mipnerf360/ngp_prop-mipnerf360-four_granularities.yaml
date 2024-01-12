@@ -1,0 +1,39 @@
+name: ngp_prop-mipnerf360-four_granularities-granular_norm
+project: granular-nerf
+entity: uwvip-nas
+method: grid
+description: This performs a sweep over mipnerf360 dataset with full size nerfacc accelerated elastic ngp prop model with and without elasticity on each subnetwork jointly optimized with 4 granularities.
+parameters:
+  dataset:
+    value: mipnerf360
+  max-steps:
+    value: 40000
+  scene:
+    values:
+      - garden
+      - bicycle
+      - bonsai
+      - counter
+      - kitchen
+      - room
+      - stump
+  granularities-sample-prob:
+    values:
+      - uniform
+  num-train-granularities:
+    value: 4
+  num-granularities-to-sample:
+    values:
+      - 4
+  radiance-field.use-elastic:
+    values:
+      - True
+      - False
+  density-field.use-elastic:
+    values:
+      - True
+      - False
+command:
+  - python
+  - scripts/train/train_granular_ngp_prop.py
+  - ${args}

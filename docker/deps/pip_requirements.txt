@@ -9,6 +9,7 @@ jupyterlab-quarto
 keras_retinanet
 lightning
 lovely-tensors
+lpips
 matplotlib
 nbdev
 ninja

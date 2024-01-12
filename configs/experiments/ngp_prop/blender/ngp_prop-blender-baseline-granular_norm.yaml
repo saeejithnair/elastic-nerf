@@ -1,0 +1,32 @@
+name: ngp_prop-blender-baseline-granular_norm
+project: granular-nerf
+entity: uwvip-nas
+method: grid
+description: This performs a sweep over blender dataset with full size nerfacc accelerated elastic ngp occ model with and without granular norm.
+parameters:
+  scene:
+    values:
+      - chair
+      - drums
+      - ficus
+      - hotdog
+      - lego
+      - materials
+      - mic
+      - ship
+  num-train-granularities:
+    value: 1
+  num-granularities-to-sample:
+    values:
+      - 1
+  radiance-field.use-elastic:
+    values:
+      - True
+  radiance-field.base.use-granular-norm:
+    values:
+      - True
+      - False
+command:
+  - python
+  - scripts/train/train_granular_ngp_occ.py
+  - ${args}

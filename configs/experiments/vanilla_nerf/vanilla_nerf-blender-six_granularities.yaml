@@ -1,0 +1,32 @@
+name: vanilla_nerf-blender-six_granularities
+project: granular-nerf
+entity: uwvip-nas
+method: grid
+description: This performs a sweep over blender dataset with nerfacc accelerated vanilla nerf model with joint sampling 6 granularities.
+parameters:
+  scene:
+    values:
+      - chair
+      - drums
+      - ficus
+      - hotdog
+      - lego
+      - materials
+      - mic
+      - ship
+  granularities-sample-prob:
+    values:
+      - uniform
+  num-train-granularities:
+    value: 6
+  num-granularities-to-sample:
+    values:
+      - 6
+  radiance-field.mlp.base.use-granular-norm:
+    values:
+      - True
+      - False
+command:
+  - python
+  - scripts/train/train_mlp_nerf.py
+  - ${args}

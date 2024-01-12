@@ -1,0 +1,33 @@
+name: ngp_occ-mipnerf360-baseline-granular_norm
+project: granular-nerf
+entity: uwvip-nas
+method: grid
+description: This performs a sweep over mipnerf360 dataset with full size nerfacc accelerated elastic ngp occ model with and without granular norm.
+parameters:
+  dataset:
+    value: mipnerf360
+  scene:
+    values:
+      - garden
+      - bicycle
+      - bonsai
+      - counter
+      - kitchen
+      - room
+      - stump
+  num-train-granularities:
+    value: 1
+  num-granularities-to-sample:
+    values:
+      - 1
+  radiance-field.use-elastic:
+    values:
+      - True
+  radiance-field.base.use-granular-norm:
+    values:
+      - True
+      - False
+command:
+  - python
+  - scripts/train/train_granular_ngp_occ.py
+  - ${args}

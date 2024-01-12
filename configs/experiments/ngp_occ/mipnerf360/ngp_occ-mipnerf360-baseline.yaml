@@ -1,0 +1,31 @@
+name: ngp_occ-mipnerf360-baseline
+project: granular-nerf
+entity: uwvip-nas
+method: grid
+description: This performs a sweep over mipnerf360 dataset with baseline ngp occ model.
+parameters:
+  dataset:
+    value: mipnerf360
+  scene:
+    values:
+      - garden
+      - bicycle
+      - bonsai
+      - counter
+      - kitchen
+      - room
+      - stump
+  num-train-granularities:
+    value: 1
+  eval-granular-widths:
+    value: 64
+  num-granularities-to-sample:
+    values:
+      - 1
+  radiance-field.use-elastic:
+    values:
+      - False
+command:
+  - python
+  - scripts/train/train_granular_ngp_occ.py
+  - ${args}

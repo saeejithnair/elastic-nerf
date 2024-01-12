@@ -1,0 +1,40 @@
+name: ngp_occ-mipnerf360
+project: granular-nerf
+entity: uwvip-nas
+method: grid
+description: This performs a sweep over mipnerf360 dataset with nerfacc accelerated ngp occ model.
+parameters:
+  dataset:
+    value: mipnerf360
+  scene:
+    values:
+      - garden
+      - bicycle
+      - bonsai
+      - counter
+      - kitchen
+      - room
+      - stump
+  granularities-sample-prob:
+    values:
+      - uniform
+      - exp-reverse
+      - exp
+  radiance-field.use-elastic:
+    values:
+      - True
+  num-train-granularities:
+    value: 4
+  num-granularities-to-sample:
+    values:
+      - 1
+      - 2
+      - 3
+  radiance-field.base.use-granular-norm:
+    values:
+      - True
+      - False
+command:
+  - python
+  - scripts/train/train_granular_ngp_occ.py
+  - ${args}

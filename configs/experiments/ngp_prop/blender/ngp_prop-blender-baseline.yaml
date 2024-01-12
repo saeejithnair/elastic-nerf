@@ -1,0 +1,30 @@
+name: ngp_prop-blender-baseline
+project: granular-nerf
+entity: uwvip-nas
+method: grid
+description: This performs a sweep over blender dataset with baseline ngp occ model.
+parameters:
+  scene:
+    values:
+      - chair
+      - drums
+      - ficus
+      - hotdog
+      - lego
+      - materials
+      - mic
+      - ship
+  num-train-granularities:
+    value: 1
+  eval-granular-widths:
+    value: 64
+  num-granularities-to-sample:
+    values:
+      - 1
+  radiance-field.use-elastic:
+    values:
+      - False
+command:
+  - python
+  - scripts/train/train_granular_ngp_occ.py
+  - ${args}

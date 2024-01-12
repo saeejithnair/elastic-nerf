@@ -1,0 +1,30 @@
+name: vanilla_nerf-blender-baseline
+project: granular-nerf
+entity: uwvip-nas
+method: grid
+description: This performs a sweep over blender dataset with baseline nerfacc accelerated vanilla nerf model.
+parameters:
+  scene:
+    values:
+      - chair
+      - drums
+      - ficus
+      - hotdog
+      - lego
+      - materials
+      - mic
+      - ship
+  num-train-granularities:
+    value: 1
+  eval-granular-widths:
+    value: 256
+  num-granularities-to-sample:
+    values:
+      - 1
+  radiance-field.mlp.use-elastic:
+    values:
+      - False
+command:
+  - python
+  - scripts/train/train_mlp_nerf.py
+  - ${args}
