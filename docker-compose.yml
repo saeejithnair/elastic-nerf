@@ -35,8 +35,8 @@ services:
           devices:
             - driver: nvidia
               # Change to ['0', '1'] to use two GPUs or specify `GPU_IDS=0,1` before running `docker compose run`
-              device_ids: [ "${GPU_IDS:-0}" ]
-              capabilities: [ gpu ]
+              device_ids: ["${GPU_IDS:-0}"]
+              capabilities: [gpu]
 
   elastic-nerf-dev:
     # Add alias to base service to reuse its configuration.
@@ -60,7 +60,7 @@ services:
     <<: *elastic-nerf-base
     build:
       context: .
-      dockerfile: docker/elastic-nerf/elastic-nerf.Dockerfile
+      dockerfile: docker/elastic-nerf.Dockerfile
       args:
         <<: *elastic-nerf-base-args
         DEVELOPER_MODE: 0
