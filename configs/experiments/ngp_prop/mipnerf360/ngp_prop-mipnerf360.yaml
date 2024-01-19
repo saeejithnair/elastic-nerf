@@ -38,5 +38,5 @@ parameters:
       - False
 command:
   - python
-  - scripts/train/train_granular_ngp_prop.py
+  - scripts/train/train_elastic_ngp_prop.py
   - ${args}

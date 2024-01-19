@@ -32,5 +32,5 @@ parameters:
       - False
 command:
   - python
-  - scripts/train/train_granular_ngp_occ.py
+  - scripts/train/train_elastic_ngp_occ.py
   - ${args}

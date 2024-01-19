@@ -37,7 +37,7 @@ else
     dvc pull && dvc checkout
 
   # Install gonas.
-  cd ${TARGET_PROJECT_DIR}/third-party/nas-sandbox && \
+  cd ${TARGET_PROJECT_DIR}/third-party/gonas && \
     pip install -e .
 fi
 
