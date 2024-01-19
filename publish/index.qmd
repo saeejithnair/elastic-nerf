@@ -1,0 +1,5 @@
+---
+title: "Elastic-NeRF."
+---
+
+Making NeRFs smaller and faster with elastic representations.

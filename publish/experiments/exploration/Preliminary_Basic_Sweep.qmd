@@ -1,0 +1,184 @@
+---
+title: Preliminary Basic Sweep
+description: Exploring the relationship between model size and quality
+format:
+  html:
+    toc: true
+    page-layout: article
+    code-line-numbers: true
+    smooth-scroll: true
+    theme:
+      light: cosmo
+      dark: darkly
+jupyter: python3
+highlight-style: github
+crossref:
+  chapters: true
+number-sections: true
+---
+
+```{python}
+# |include: false
+# Imports
+import plotly.graph_objects as go
+from tqdm import tqdm as tqdm
+import plotly.io as pio
+import plotly.graph_objects as go
+from elastic_nerf.utils import wandb_utils as wu
+from elastic_nerf.utils import results_utils as ru
+from elastic_nerf.utils import plotting_utils as pu
+from elastic_nerf.utils import notebook_utils as nu
+import pandas as pd
+
+pio.renderers.default = "plotly_mimetype+notebook_connected"
+pd.set_option("display.max_columns", None)
+
+```
+
+```{python}
+# |include: false
+
+# Load sweep data
+sweep_id = "hgh4tzbs"
+
+# Get the runs from sweep.
+# results = wu.fetch_sweep_results(sweep_id)
+```
+
+```{python}
+#| include: false
+
+# Download baseline Vanilla-Nerf results
+run_id = "fs2o0h03"
+# baseline_vanilla = wu.fetch_run_result(run_id)
+```
+
+
+# Results
+
+::: callout-note
+Following table is sorted to show the best models (i.e. lowest LPIPS) first.
+:::
+
+```{python}
+# |echo: false
+# |column: page-right
+
+# arch_style_categories = {
+#     # "LARGE_UNIFORM": 0,
+#     # "SMALL_UNIFORM": 1,
+#     "LARGE_VARIABLE": 2,
+#     "SMALL_VARIABLE": 3,
+# }
+
+# df = wu.prepare_data(results, arch_style_categories)
+# df_sorted = df.sort_values("LPIPS", ascending=True).head(20)
+
+# # cols_to_show = ['Run ID', 'Coarse Field Arch Style', 'Fine Field Arch Style', 'Coarse Field Flop Ratio vs. Vanilla', 'Fine Field Flop Ratio vs. Vanilla', 'SSIM', 'PSNR', 'LPIPS']
+
+# # df_sorted[cols_to_show]
+# df_sorted
+```
+
+
+::: callout-warning
+lorem ipsum
+:::
+
+```{python}
+# |echo: false
+
+# import plotly.graph_objects as go
+# import plotly.io as pio
+# import pandas as pd
+# from IPython.display import display, HTML
+
+# arch_styles_to_plot = [key for key in arch_style_categories.keys() if "VARIABLE" in key]
+# arch_style_vals = [arch_style_categories[key] for key in arch_styles_to_plot]
+# run_idxs = [float(i / 100) for i in range(len(df))]
+
+# fig = go.Figure(
+#     data=go.Parcoords(
+#         line=dict(
+#             color=df["LPIPS"],
+#             colorscale="Electric",
+#             showscale=True,
+#             cmin=0,
+#             cmax=0.3,
+#             reversescale=False,
+#         ),
+#         dimensions=list(
+#             [
+#                 dict(
+#                     tickvals=list(df.index.values),
+#                     ticktext=list(df["Run ID"]),
+#                     label="Run ID",
+#                     values=df.index,
+#                 ),
+#                 dict(
+#                     tickvals=arch_style_vals,
+#                     ticktext=arch_styles_to_plot,
+#                     label="Coarse Field Arch Style",
+#                     values=df["Coarse Field Arch Style Remapped"],
+#                 ),
+#                 dict(
+#                     label="Coarse Field Flop Ratio",
+#                     values=df["Coarse Field Flop Ratio vs. Vanilla"],
+#                 ),
+#                 dict(
+#                     tickvals=arch_style_vals,
+#                     ticktext=arch_styles_to_plot,
+#                     label="Fine Field Arch Style",
+#                     values=df["Fine Field Arch Style Remapped"],
+#                 ),
+#                 dict(
+#                     label="Fine Field Flop Ratio",
+#                     values=df["Fine Field Flop Ratio vs. Vanilla"],
+#                 ),
+#                 dict(
+#                     label="SSIM",
+#                     values=df["SSIM"],
+#                 ),
+#                 dict(
+#                     label="PSNR",
+#                     values=df["PSNR"],
+#                 ),
+#                 dict(label="LPIPS", values=df["LPIPS"], range=[0.3, 0]),
+#             ]
+#         ),
+#         unselected=dict(line=dict(color="lightgray", opacity=0.5)),
+#         tickfont=dict(size=8),
+#     )
+# )
+
+# nu.display_figure_fullscreen(fig, "basic_sweep_parcoords")
+```
+
+::: callout-tip
+Most plots on this site are interactive! Don't be afraid to click, drag, hover, full-screen, toggle, etc. Not all plots support every interaction but many of them have neat hidden features. E.g. try clicking on an axis in the above parallel coordinates plot and dragging up/down. It will highlight the runs which overlap with the selected range!
+:::
+
+```{python}
+# | echo: false
+
+# baseline_values = {
+#     'Coarse Field Flop Ratio vs. Vanilla': 1.0,
+#     'Fine Field Flop Ratio vs. Vanilla': 1.0,
+#     'LPIPS': baseline_vanilla.summary["Eval Images Metrics/fine_lpips"],
+#     'SSIM': baseline_vanilla.summary["Eval Images Metrics/fine_ssim"],
+#     'PSNR': baseline_vanilla.summary["Eval Images Metrics/fine_psnr"]
+# }
+
+# fig = pu.interactive_2d_colorplot(
+#     df,
+#     x_col="Coarse Field Flop Ratio vs. Vanilla",
+#     y_col="Fine Field Flop Ratio vs. Vanilla",
+#     z_cols=["LPIPS", "SSIM", "PSNR"],
+#     title="Flop Ratios vs. Similarity Metrics",
+#     xaxis_title="Coarse Field Flop Ratio",
+#     yaxis_title="Fine Field Flop Ratio",
+#     extra_hover_cols=["Run ID", "Coarse Field Arch Style", "Fine Field Arch Style"],
+#     baseline_values=baseline_values
+# )
+# nu.display_figure_fullscreen(fig, "basic_sweep_scatter_multiple")
+```

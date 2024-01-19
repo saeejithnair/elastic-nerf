@@ -1,0 +1,5 @@
+---
+title: "About"
+---
+
+Vision and Image Processing Lab (VIP) @ UWaterloo, Department of Systems Design Engineering
