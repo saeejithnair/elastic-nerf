@@ -1,0 +1,181 @@
+---
+title: Baseline Benchmarking
+description: Benchmarking our Nerfacc reimplementations against the published results.
+format:
+  html:
+    toc: true
+    page-layout: article
+    code-line-numbers: true
+    smooth-scroll: true
+    code-overflow: wrap
+    code-fold: true
+jupyter: python3
+highlight-style: github
+crossref:
+  chapters: true
+number-sections: true
+---
+
+```{python}
+# |include: false
+# Imports
+import plotly.graph_objects as go
+from tqdm import tqdm as tqdm
+import plotly.io as pio
+import plotly.graph_objects as go
+import plotly.express as px
+from elastic_nerf.utils import wandb_utils as wu
+from elastic_nerf.utils import results_utils as ru
+from elastic_nerf.utils import plotting_utils as pu
+from elastic_nerf.utils import notebook_utils as nu
+from elastic_nerf.utils import dataset_utils as du
+from elastic_nerf.utils.experiments.sweeps import SWEEPS
+import pandas as pd
+import wandb
+import numpy as np
+pio.renderers.default = "plotly_mimetype+notebook_connected"
+pd.set_option("display.max_columns", None)
+
+COLUMNS_TO_SHOW = [
+  "dataset_name", "dataset_scene", "use_elastic", "max_steps", "hidden_dim", "num_train_granularities", "num_granularities_to_sample", "avg"
+]
+```
+
+So far, we benchmarked our reimplementation of Nerfacc's NGP-Occ on the Blender synthetic dataset and Nerfacc's NGP-Prop on the MipNeRF-360 dataset. It's slightly lower for certain scenes (but also slightly higher for other scenes) but it's extremely close so barring any discrepancies that come up in the future, it looks like the reimplementation is correct.
+
+# Nerfacc NGP-Occ
+## Blender synthetic dataset
+We compare against the [official results](https://www.nerfacc.com/examples/static/ngp.html) which was last updated on 2023-04-04 with `nerfacc==0.5.0`. We use their results for the _Ours (occ) 20k steps_ method.
+```{python}
+# |code-summary: Fetch data from wandb sweep [bj5mkdex](https://wandb.ai/saeejithn/elastic-nerf/sweeps/bj5mkdex?workspace=user-saeejithn)
+
+# Load sweep data
+sweep_id = "bj5mkdex"
+
+# Get the runs from sweep.
+ngp_occ_blender_results = wu.fetch_sweep_results(sweep_id)
+df_ngp_occ_blender_results = wu.prepare_data(ngp_occ_blender_results)
+```
+
+```{python}
+# |column: page-right
+
+# Original column names are long so remap for readability.
+column_mapping = {
+    'dataset_name': 'Dataset',
+    'dataset_scene': 'Scene',
+    'radiance_field_use_elastic': 'Radiance Field Use Elastic',
+    'num_train_granularities': 'Num Train Granularities',
+    'num_granularities_to_sample': 'Num Granularities To Sample',
+    'max_steps': 'Max Steps',
+    'hidden_dim': 'Max Width',
+    'Eval Results Summary/psnr_avg/elastic_64': 'PSNR Avg',
+    'Eval Results Summary/ssim_avg/elastic_64': 'SSIM Avg',
+    'Eval Results Summary/lpips_avg/elastic_64': 'LPIPS Avg',
+}
+format_mapping = {
+    'PSNR Avg': ".4f",
+    'SSIM Avg': ".4f",
+    'LPIPS Avg': ".4f",
+}
+
+# Cleanup results from the benchmarking of our reimplementation for plotting.
+plotter = ru.DataTablePlotter()
+plotter.add_dataframe('NGP Occ Baseline Benchmarking (Ours)', df_ngp_occ_blender_results, column_mapping=column_mapping, format_mapping=format_mapping)
+df_ngp_occ_blender_results = plotter.get_remapped_dataframe('NGP Occ Baseline Benchmarking (Ours)')
+
+# Create a dataframe for the official results and calculate the % difference between our reimplementation and their official results.
+df_nerfacc_occ_baseline = pd.DataFrame({
+    'Scene': du.blender_scenes,
+    'PSNR (Official)': [35.67, 36.85, 29.60, 35.71, 37.37, 33.95, 25.44, 30.29],
+    'PSNR (Ours)': [df_ngp_occ_blender_results.loc[df_ngp_occ_blender_results['Scene'] == scene, 'PSNR Avg'].iloc[0] for scene in du.blender_scenes],
+})
+difference = (
+    (df_nerfacc_occ_baseline['PSNR (Ours)'] - df_nerfacc_occ_baseline['PSNR (Official)']) /
+    df_nerfacc_occ_baseline['PSNR (Official)']
+)
+# Visualize in table as a percentage.
+df_nerfacc_occ_baseline["% Difference"] = difference * 100
+
+
+# Create a color mapping for all cells based on the % difference.
+colors = px.colors.sample_colorscale("RdYlGn", list(np.interp(difference, [-1, 1], [0, 1])))
+color_mapping = {"ALL_COLUMNS": colors}
+format_mapping = {
+    'PSNR (Ours)': ".2f",
+    '% Difference': ".4f",
+}
+
+plotter.add_dataframe('Comparison with Official Nerfacc Results', df_nerfacc_occ_baseline, color_mapping=color_mapping, format_mapping=format_mapping)
+plotter.show()
+```
+
+
+# Nerfacc NGP-Prop
+## Mip-NeRF 360 dataset
+```{python}
+# |code-summary: Fetch data from wandb sweep [0rn5ziwc](https://wandb.ai/saeejithn/elastic-nerf/sweeps/0rn5ziwc?workspace=user-saeejithn)
+
+# Load sweep data
+sweep_id = "0rn5ziwc"
+
+# Get the runs from sweep.
+ngp_prop_mipnerf360_results = wu.fetch_sweep_results(sweep_id)
+df_ngp_prop_mipnerf360_results = wu.prepare_data(ngp_prop_mipnerf360_results)
+```
+
+We compare against the [official results](https://www.nerfacc.com/examples/static/ngp.html) which was last updated on 2023-04-04 with `nerfacc==0.5.0`. We use their results for the _Ours (prop) 20k steps_ method.
+
+```{python}
+# |column: page-right
+
+# Original column names are long so remap for readability.
+column_mapping = {
+    'dataset': 'Dataset',
+    'scene': 'Scene',
+    'radiance_field_use_elastic': 'Radiance Field Use Elastic',
+    'density_field_use_elastic': 'Density Field Use Elastic',
+    'num_train_granularities': 'Num Train Granularities',
+    'num_granularities_to_sample': 'Num Granularities To Sample',
+    'max_steps': 'Max Steps',
+    'hidden_dim': 'Max Width',
+    'Eval Results Summary/psnr_avg/elastic_64': 'PSNR Avg',
+    'Eval Results Summary/ssim_avg/elastic_64': 'SSIM Avg',
+    'Eval Results Summary/lpips_avg/elastic_64': 'LPIPS Avg',
+}
+format_mapping = {
+    'PSNR Avg': ".4f",
+    'SSIM Avg': ".4f",
+    'LPIPS Avg': ".4f",
+}
+
+# Cleanup results from the benchmarking of our reimplementation for plotting.
+plotter = ru.DataTablePlotter()
+plotter.add_dataframe('NGP Prop Baseline Benchmarking (Ours)', df_ngp_prop_mipnerf360_results, column_mapping=column_mapping, format_mapping=format_mapping)
+df_ngp_prop_mipnerf360_results = plotter.get_remapped_dataframe('NGP Prop Baseline Benchmarking (Ours)')
+
+# Create a dataframe for the official results and calculate the % difference between our reimplementation and their official results.
+df_nerfacc_prop_baseline = pd.DataFrame({
+    'Scene': du.mipnerf360_scenes,
+    'PSNR (Official)': [23.23, 25.42, 25.24, 30.71, 26.74, 30.70, 30.99],
+    'PSNR (Ours)': [df_ngp_prop_mipnerf360_results.loc[df_ngp_prop_mipnerf360_results['Scene'] == scene, 'PSNR Avg'].iloc[0] for scene in du.mipnerf360_scenes],
+})
+difference = (
+    (df_nerfacc_prop_baseline['PSNR (Ours)'] - df_nerfacc_prop_baseline['PSNR (Official)']) /
+    df_nerfacc_prop_baseline['PSNR (Official)']
+)
+# Visualize in table as a percentage.
+df_nerfacc_prop_baseline["% Difference"] = difference * 100
+
+
+# Create a color mapping for all cells based on the % difference.
+colors = px.colors.sample_colorscale("RdYlGn", list(np.interp(difference, [-1, 1], [0, 1])))
+color_mapping = {"ALL_COLUMNS": colors}
+format_mapping = {
+    'PSNR (Ours)': ".2f",
+    '% Difference': ".4f",
+}
+
+plotter.add_dataframe('Comparison with Official Nerfacc Results', df_nerfacc_prop_baseline, color_mapping=color_mapping, format_mapping=format_mapping)
+plotter.show()
+```

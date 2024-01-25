@@ -37,12 +37,14 @@ PROJECT_NAME="elastic-nerf"
 host_workspace_path=""
 wandb_key=""
 hf_token=""
+WANDB_CACHE_DIR=""
 
 # Host machine setup.
 HOSTNAME=$(hostname)
 case $HOSTNAME in
   guacamole)
     HUGGINGFACE_CACHE_DIR="/pub4/hf_cache"
+    WANDB_CACHE_DIR="/pub2/nerf/wandb"
     NERFSTUDIO_CACHE_DIR="/pub2/nerf/nerfstudio"
     ;;
   banana)
@@ -218,6 +220,7 @@ echo "TARGET_REPO_MOUNTDIR=${TARGET_REPO_MOUNTDIR}" >> ".env"
 echo "TARGET_PROJECT_DIR=${TARGET_PROJECT_DIR}" >> ".env"
 echo "HUGGINGFACE_CACHE_DIR=${HUGGINGFACE_CACHE_DIR}" >> ".env"
 echo "NERFSTUDIO_CACHE_DIR=${NERFSTUDIO_CACHE_DIR}" >> ".env"
+echo "WANDB_CACHE_DIR=${WANDB_CACHE_DIR}" >> ".env"
 echo "HOSTNAME=${HOSTNAME}" >> ".env"
 
 # TODO(snair): Deprecate this.

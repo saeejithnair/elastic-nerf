@@ -10,7 +10,6 @@ from typing import Any, Dict, List, Optional, Tuple, Union
 
 import gonas.utils.logging_utils as lu
 import pandas as pd
-import wandb
 from wandb.apis.public import Api, File
 from wandb.apis.public import Run as WandbPublicRun
 from wandb.apis.public import Sweep
@@ -19,23 +18,25 @@ from wandb.sdk.artifacts.exceptions import ArtifactNotLoggedError
 from wandb.sdk.wandb_init import init
 from wandb.sdk.wandb_run import Run as WandbInternalRun
 
+import wandb
+
 CACHE_DIR: str = "/home/user/shared/wandb_cache"
-PROJECT: str = "nerf-optimization"
-ENTITY: str = "uwvip-nas"
+PROJECT: str = "elastic-nerf"
+ENTITY: str = "saeejithn"
 PROJECT_NAME: str = f"{ENTITY}/{PROJECT}"
 
 
-# if not Path(CACHE_DIR).exists():
-#     from elastic_nerf.config import HOSTNAMES_TO_CACHE_DIRS
+if not Path(CACHE_DIR).exists():
+    from elastic_nerf.configs.hosts import HOSTNAMES_TO_CACHE_DIRS
 
-#     hostname = os.environ["HOSTNAME"]
-#     wandb_cache_dir = Path(HOSTNAMES_TO_CACHE_DIRS[hostname]) / "wandb_cache"
-#     # Make wandb_cache_dir if it doesn't exist already.
-#     wandb_cache_dir.mkdir(parents=True, exist_ok=True)
-#     lu.warning(
-#         f"WANDB_CACHE_DIR {CACHE_DIR} does not exist, defaulting to {wandb_cache_dir}"
-#     )
-#     CACHE_DIR = wandb_cache_dir.as_posix()
+    hostname = os.environ["HOSTNAME"]
+    wandb_cache_dir = Path(HOSTNAMES_TO_CACHE_DIRS[hostname]) / "wandb_cache"
+    # Make wandb_cache_dir if it doesn't exist already.
+    wandb_cache_dir.mkdir(parents=True, exist_ok=True)
+    lu.warning(
+        f"WANDB_CACHE_DIR {CACHE_DIR} does not exist, defaulting to {wandb_cache_dir}"
+    )
+    CACHE_DIR = wandb_cache_dir.as_posix()
 
 api = Api(timeout=19)
 
@@ -196,145 +197,37 @@ def fetch_all_sweep_results(sweeps: List[str]) -> Dict[str, List[RunResult]]:
     return all_results
 
 
-def prepare_data(
-    results: List[RunResult],
-    arch_style_categories,
-    parse_summary: bool = True,
-):
-    """Prepare data for plotting."""
+def flatten_dict(d, parent_key="", sep="_"):
+    """Flatten a nested dictionary."""
+    items = []
+    for k, v in d.items():
+        new_key = f"{parent_key}{sep}{k}" if parent_key else k
+        if isinstance(v, dict):
+            items.extend(flatten_dict(v, new_key, sep=sep).items())
+        else:
+            items.append((new_key, v))
+    return dict(items)
+
+
+def prepare_data(results: List[RunResult]) -> pd.DataFrame:
+    """Prepare data for analysis from updated RunResult summaries."""
     data = []
-    # Metrics where a lower value is better
-    lower_is_better = [
-        "Eval Images Metrics Dict (all images)/fine_lpips",
-        "Train Loss Dict/rgb_loss_coarse",
-        "Eval Loss Dict/rgb_loss_coarse",
-    ]
 
     for result in results:
-        gen_nerf_arch = result.config["gen_nerf_arch"]
+        # Flatten the summary dictionary
+        flattened_summary = flatten_dict(result.summary)
+        flattened_config = flatten_dict(result.config)
 
-        # Get coarse and fine field specific info
-        mlp_metrics = {}
-        if "blender-scene" in result.config:
-            mlp_metrics["dataset"] = result.config["blender-scene"]
-        else:
-            mlp_metrics["dataset"] = result.config["data"].split("/")[-1]
+        # Include the Run ID in the data
+        run_data = {"Run ID": result.run_id}
+        run_data.update(flattened_summary)
+        run_data.update(flattened_config)
 
-        arch_id = ""
-        for field in ["coarse_field", "fine_field"]:
-            base_mlp = gen_nerf_arch[field]["base_mlp"]
-            field_label = field.replace("_", " ").title()
-            arch_id += f"{field}-{base_mlp['arch_style']}-{base_mlp['target_ratio']}-"
-            mlp_metrics.update(
-                {
-                    f"{field_label} Arch Style": base_mlp["arch_style"],
-                    f"{field_label} Target Ratio": base_mlp["target_ratio"],
-                    f"{field_label} Arch Style Remapped": arch_style_categories[
-                        base_mlp["arch_style"]
-                    ],
-                    f"{field_label} Flop Ratio vs. Vanilla": base_mlp[
-                        "flop_ratio_vs_base_mlp_base_uniform"
-                    ],
-                    f"{field_label} Params Ratio vs. Vanilla": base_mlp[
-                        "params_ratio_vs_base_mlp_base_uniform"
-                    ],
-                    f"{field_label} Generated": base_mlp["generated"],
-                    f"{field_label} Pretrained": base_mlp["pretrained"],
-                    f"{field_label} Flops": base_mlp["generated_base_mlp"]["flops"],
-                    f"{field_label} Params": base_mlp["generated_base_mlp"]["params"],
-                    f"{field_label} Depth (Stage 1)": base_mlp["generated_base_mlp"][
-                        "attributes"
-                    ]["stage1"]["depth"],
-                    f"{field_label} Channels (Stage 1)": base_mlp["generated_base_mlp"][
-                        "attributes"
-                    ]["stage1"]["channels"],
-                    f"{field_label} Depth (Stage 2)": base_mlp["generated_base_mlp"][
-                        "attributes"
-                    ]["stage2"]["depth"],
-                    f"{field_label} Channels (Stage 2)": base_mlp["generated_base_mlp"][
-                        "attributes"
-                    ]["stage2"]["channels"],
-                    f"{field_label} Depth (Stage 3)": base_mlp["generated_base_mlp"][
-                        "attributes"
-                    ]["stage3"]["depth"],
-                    f"{field_label} Channels (Stage 3)": base_mlp["generated_base_mlp"][
-                        "attributes"
-                    ]["stage3"]["channels"],
-                }
-            )
+        # Append the collected data for this run to the main data list
+        data.append(run_data)
 
-        metrics = {"Run ID": result.run_id, "Arch ID": arch_id[:-1]}
-
-        if parse_summary:
-            metrics_list = [
-                ("Eval Images Metrics Dict (all images)/fine_ssim", "SSIM"),
-                ("Eval Images Metrics Dict (all images)/psnr", "PSNR"),
-                ("Eval Images Metrics Dict (all images)/fine_lpips", "LPIPS"),
-                ("Eval Images Metrics Dict (subset)/fine_ssim", "SSIM (subset)"),
-                ("Eval Images Metrics Dict (subset)/psnr", "PSNR (subset)"),
-                ("Eval Images Metrics Dict (subset)/fine_lpips", "LPIPS (subset)"),
-                (
-                    "Eval Images Metrics Dict (subset)/num_rays_per_sec",
-                    "Num Rays Per Sec (subset)",
-                ),
-                ("Eval Images Metrics Dict (subset)/fps", "FPS (subset)"),
-            ]
-            for metric, label in metrics_list:
-                if metric in result.summary:
-                    metrics[label] = result.summary[metric]
-                    # Extract the best value if the metric's history is available in the result.
-                    if hasattr(result, "history") and metric in result.history.columns:
-                        history_df = result.history[metric].dropna()
-                        if metric in lower_is_better:
-                            best_val_idx = history_df.idxmin()
-                            best_val = history_df.min()
-                        else:
-                            best_val_idx = history_df.idxmax()
-                            best_val = history_df.max()
-                        metrics[label + " (Best)"] = best_val
-                        metrics[label + " (Best Step)"] = best_val_idx
-
-            eval_results_list = [
-                "Eval Images Metrics/image_idx",
-                "Eval Images/img",
-                "Eval Images/depth",
-            ]
-            for eval_result in eval_results_list:
-                if hasattr(result, "history") and eval_result in result.history.columns:
-                    history_df = result.history[eval_result].dropna()
-                    if eval_result == "Eval Images Metrics/image_idx":
-                        metrics[eval_result] = history_df.iloc[-1]
-                    else:
-                        metrics[eval_result] = history_df.iloc[-1]["path"]
-
-        if "params_ratio_vs_vanilla_nerf" in gen_nerf_arch:
-            metrics["Overall Params Ratio vs. Vanilla"] = gen_nerf_arch[
-                "params_ratio_vs_vanilla_nerf"
-            ]
-
-        if "flops_ratio_vs_vanilla_nerf" in gen_nerf_arch:
-            metrics["Overall FLOPs Ratio vs. Vanilla"] = gen_nerf_arch[
-                "flops_ratio_vs_vanilla_nerf"
-            ]
-
-        if "flops" in gen_nerf_arch:
-            metrics["Overall FLOPs"] = gen_nerf_arch["flops"]
-
-        if "params" in gen_nerf_arch:
-            metrics["Overall Params"] = gen_nerf_arch["params"]
-
-        if "optimal-model" in result.config:
-            metrics["Model ID"] = result.config["optimal-model"]
-
-        if "max_num_iterations" in result.config:
-            metrics["Max Num Iterations"] = result.config["max_num_iterations"]
-
-        metrics.update(mlp_metrics)
-        data.append(metrics)
-
-    # Create a pandas DataFrame from the data
+    # Convert the list of dictionaries into a DataFrame
     df = pd.DataFrame(data)
-
     return df
 
 
