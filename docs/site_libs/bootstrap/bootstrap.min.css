@@ -18692,8 +18692,10 @@ main.page-columns > header > .title.h1 {
         0px,
         250px
       )
-      [page-end-inset] minmax(50px, 100px)
-      [page-end] 1fr [screen-end-inset] 1.5em [screen-end];
+      [page-end-inset] minmax(
+        50px,
+        100px
+      ) [page-end] 1fr [screen-end-inset] 1.5em [screen-end];
   }
   body:not(.floating):not(.docked) .page-columns.toc-left {
     display: grid;
@@ -18743,8 +18745,10 @@ main.page-columns > header > .title.h1 {
         25px,
         50px
       )
-      [body-start] 1.5em [body-content-start] minmax(500px, calc(800px - 3em))
-      [body-content-end] 1.5em [body-end] minmax(25px, 50px)
+      [body-start] 1.5em [body-content-start] minmax(
+        500px,
+        calc(800px - 3em)
+      ) [body-content-end] 1.5em [body-end] minmax(25px, 50px)
       [body-end-outset] minmax(50px, 150px) [page-end-inset] minmax(25px, 50px)
       [page-end] 5fr [screen-end-inset] 1.5em [screen-end];
   }
@@ -18848,8 +18852,10 @@ main.page-columns > header > .title.h1 {
         25px,
         50px
       )
-      [body-start] 1.5em [body-content-start] minmax(500px, calc(800px - 3em))
-      [body-content-end] 1.5em [body-end] minmax(25px, 50px)
+      [body-start] 1.5em [body-content-start] minmax(
+        500px,
+        calc(800px - 3em)
+      ) [body-content-end] 1.5em [body-end] minmax(25px, 50px)
       [body-end-outset] minmax(50px, 150px) [page-end-inset] minmax(25px, 50px)
       [page-end] 5fr [screen-end-inset] 1.5em [screen-end];
   }

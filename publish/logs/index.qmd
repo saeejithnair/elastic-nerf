@@ -7,9 +7,6 @@ format:
     page-layout: article
     code-line-numbers: true
     smooth-scroll: true
-    theme:
-      light: cosmo
-      dark: darkly
 jupyter: python3
 highlight-style: github
 crossref:
