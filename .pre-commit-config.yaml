@@ -83,12 +83,3 @@ repos:
         stages:
           - post-checkout
         always_run: true
-
-  # - repo: local
-  #   hooks:
-  #     - id: update-submodules
-  #       name: Update Submodules
-  #       entry: update_submodules.sh
-  #       language: script
-  #       stages:
-  #         - post-checkout
