@@ -1,0 +1,10 @@
+{
+  "hash": "96024f18daaf9f75e451436cb9422d5b",
+  "result": {
+    "engine": "jupyter",
+    "markdown": "---\ntitle: Logs\ndescription: Research notebook\nformat:\n  html:\n    toc: true\n    page-layout: article\n    code-line-numbers: true\n    smooth-scroll: true\n    theme:\n      light: cosmo\n      dark: darkly\nhighlight-style: github\ncrossref:\n  chapters: true\nnumber-sections: true\n---\n\n# Jan 19, 2024\n## NGP-Occ Blender Baseline benchmarking\nRan wandb sweep for [`ngp_occ-blender-baseline`](https://wandb.ai/saeejithn/elastic-nerf/sweeps/bj5mkdex/workspace) to benchmark the performance of my baseline reimplementation of Nerfacc NGP Occ on the Blender dataset.\n\n\n```{bash}\nwandb sweep configs/experiments/ngp_occ/blender/ngp_occ-blender-baseline.yaml\nGPU_IDS=0 docker compose run -d --build elastic-nerf wandb agent saeejithn/elastic-nerf/bj5mkdex\n```\n\n\n## NGP-Prop MipNeRF-360 Baseline benchmarking\nRan wandb sweep for [`ngp_prop-mipnerf360-baseline`](https://wandb.ai/saeejithn/elastic-nerf/sweeps/0rn5ziwc/workspace) to benchmark the performance of my baseline reimplementation of Nerfacc NGP Prop model on the Mip-NeRF 360 dataset.\n\n```{bash}\nwandb sweep configs/experiments/ngp_prop/mipnerf360/ngp_prop-mipnerf360-baseline.yaml\nGPU_IDS=2 docker compose run -d --build elastic-nerf wandb agent saeejithn/elastic-nerf/0rn5ziwc\n```\n\n",
+    "supporting": ["index_files"],
+    "filters": [],
+    "includes": {}
+  }
+}

@@ -1,0 +1,9 @@
+{
+  "hash": "6ef94d6fe714e2a28f24e54502ac829c",
+  "result": {
+    "markdown": "---\ntitle: Baseline Benchmarking\ndescription: Benchmarking my reimplementations against the published results.\nformat:\n  html:\n    toc: true\n    page-layout: article\n    code-line-numbers: true\n    smooth-scroll: true\n    theme:\n      light: cosmo\n      dark: darkly\nhighlight-style: github\ncrossref:\n  chapters: true\nnumber-sections: true\n---\n\n\n\n\n# Results\n\n::: callout-note\nFollowing table is sorted to show the best models (i.e. lowest LPIPS) first.\n:::\n\n\n\n::: callout-warning\nlorem ipsum\n:::\n\n\n\n::: callout-tip\nMost plots on this site are interactive! Don't be afraid to click, drag, hover, full-screen, toggle, etc. Not all plots support every interaction but many of them have neat hidden features. E.g. try clicking on an axis in the above parallel coordinates plot and dragging up/down. It will highlight the runs which overlap with the selected range!\n:::\n\n\n\n",
+    "supporting": ["Preliminary_Basic_Sweep_files"],
+    "filters": [],
+    "includes": {}
+  }
+}
