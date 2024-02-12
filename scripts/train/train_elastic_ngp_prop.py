@@ -324,7 +324,7 @@ class NGPOccTrainer:
         self.train_elastic_widths = torch.tensor(train_granularities)
         self.eval_elastic_widths = torch.tensor(config.eval_elastic_widths)
 
-        # The sampling weights determine the probability of a granular_width
+        # The sampling weights determine the probability of a elastic_width
         # being selected for a forward pass.
         self.granularity_sampling_weights: torch.Tensor = (
             self.get_granularity_sampling_weights(
@@ -332,7 +332,7 @@ class NGPOccTrainer:
             )
         )
 
-        # Keep track of how many samples we've seen for each granular_width.
+        # Keep track of how many samples we've seen for each elastic_width.
         # Create torch tensor that maps from granularity width to tensor index.
         # Initialize the granularity indices and sample counts
         unique_granularities, _ = torch.sort(
@@ -343,10 +343,10 @@ class NGPOccTrainer:
         self.granularity_indices = unique_granularities
         self.granularity_sample_counts = torch.zeros_like(self.granularity_indices)
         self.num_updates_skipped = {
-            int(granular_width): 0 for granular_width in unique_granularities
+            int(elastic_width): 0 for elastic_width in unique_granularities
         }
         self.granularity_target_num_rays = {
-            int(granular_width): 0 for granular_width in unique_granularities
+            int(elastic_width): 0 for elastic_width in unique_granularities
         }
 
         # Set up wandb
@@ -533,13 +533,13 @@ class NGPOccTrainer:
         return weights / weights.sum()
 
     def update_granularity_sample_counts(self, sampled_granularities):
-        for granular_width in sampled_granularities:
-            # Find the index in granularity_indices that corresponds to granular_width
-            index = torch.nonzero(self.granularity_indices == granular_width).item()
+        for elastic_width in sampled_granularities:
+            # Find the index in granularity_indices that corresponds to elastic_width
+            index = torch.nonzero(self.granularity_indices == elastic_width).item()
             self.granularity_sample_counts[index] += 1
 
-    def get_granularity_sample_counts(self, granular_width):
-        index = torch.nonzero(self.granularity_indices == granular_width).item()
+    def get_granularity_sample_counts(self, elastic_width):
+        index = torch.nonzero(self.granularity_indices == elastic_width).item()
         return int(self.granularity_sample_counts[index])
 
     def log_metric(
@@ -574,18 +574,18 @@ class NGPOccTrainer:
             for metric_name, metric_value in metrics_dict[granularity_label].items():
                 log_dict[f"{mode}/{metric_name}/{granularity_label}"] = metric_value
 
-        for granular_width, sample_count in zip(
+        for elastic_width, sample_count in zip(
             self.granularity_indices, self.granularity_sample_counts
         ):
-            granular_width, sample_count = int(granular_width), int(sample_count)
-            granularity_label = f"elastic_{granular_width}"
+            elastic_width, sample_count = int(elastic_width), int(sample_count)
+            granularity_label = f"elastic_{elastic_width}"
             log_dict[f"{mode}/num_sampled_times/{granularity_label}"] = sample_count
             log_dict[
                 f"{mode}/num_updates_skipped/{granularity_label}"
-            ] = self.num_updates_skipped[granular_width]
+            ] = self.num_updates_skipped[elastic_width]
             log_dict[
                 f"{mode}/target_num_rays/{granularity_label}"
-            ] = self.granularity_target_num_rays[granular_width]
+            ] = self.granularity_target_num_rays[elastic_width]
 
         log_dict[f"{mode}/elapsed_time"] = elapsed_time
         if axis_key is not None:
@@ -687,17 +687,17 @@ class NGPOccTrainer:
         images_dict = {}
 
         # Rendering for different granularities.
-        for granular_width in tqdm.tqdm(
+        for elastic_width in tqdm.tqdm(
             self.eval_elastic_widths, desc="Granular Widths", leave=False
         ):
             torch.cuda.empty_cache()
-            granular_width = int(granular_width)
-            granularity_label = f"elastic_{granular_width}"
+            elastic_width = int(elastic_width)
+            granularity_label = f"elastic_{elastic_width}"
             kwargs = {}
             if self.config.radiance_field.use_elastic:
-                kwargs["active_neurons_radiance"] = granular_width
+                kwargs["active_neurons_radiance"] = elastic_width
             if self.config.density_field.use_elastic:
-                kwargs["active_neurons_prop"] = granular_width
+                kwargs["active_neurons_prop"] = elastic_width
             rgb, acc, depth, _ = render_image_with_propnet(
                 self.radiance_field,
                 self.proposal_networks,
@@ -902,7 +902,7 @@ class NGPOccTrainer:
 
     def train_granular_step(
         self,
-        granular_width: int,
+        elastic_width: int,
         granularity_loss_weight: float,
         proposal_requires_grad: bool,
     ) -> Tuple[torch.Tensor, Optional[torch.Tensor], Dict[str, Any]]:
@@ -913,9 +913,9 @@ class NGPOccTrainer:
 
         kwargs = {}
         if self.config.radiance_field.use_elastic:
-            kwargs["active_neurons_radiance"] = granular_width
+            kwargs["active_neurons_radiance"] = elastic_width
         if self.config.density_field.use_elastic:
-            kwargs["active_neurons_prop"] = granular_width
+            kwargs["active_neurons_prop"] = elastic_width
         rgb, acc, depth, extras = render_image_with_propnet(
             self.radiance_field,
             self.proposal_networks,
@@ -990,12 +990,12 @@ class NGPOccTrainer:
         loss_dict = {}
         metrics_dict = {}
         estimator_loss_dict = {}
-        for granular_width in granularities_to_sample:
+        for elastic_width in granularities_to_sample:
             torch.cuda.empty_cache()
-            granular_width = int(granular_width)
-            granularity_label = f"elastic_{granular_width}"
+            elastic_width = int(elastic_width)
+            granularity_label = f"elastic_{elastic_width}"
             loss, estimator_loss, metrics = self.train_granular_step(
-                int(granular_width), granularity_loss_weight, proposal_requires_grad
+                int(elastic_width), granularity_loss_weight, proposal_requires_grad
             )
             metrics_dict[granularity_label] = metrics
             loss_dict[granularity_label] = loss

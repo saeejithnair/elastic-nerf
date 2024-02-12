@@ -158,7 +158,7 @@ class Trainer:
         self.train_elastic_widths = torch.tensor(train_granularities)
         self.eval_elastic_widths = torch.tensor(config.eval_elastic_widths)
 
-        # The sampling weights determine the probability of a granular_width
+        # The sampling weights determine the probability of a elastic_width
         # being selected for a forward pass.
         self.granularity_sampling_weights: torch.Tensor = (
             self.get_granularity_sampling_weights(
@@ -166,19 +166,19 @@ class Trainer:
             )
         )
 
-        # Keep track of how many samples we've seen for each granular_width.
+        # Keep track of how many samples we've seen for each elastic_width.
         # The keys for this should be the eval granularities so that in our
         # logs, we can see for certain that the non train granularities have
         # 0 samples.
         self.granularity_sample_counts = {
-            int(granular_width): 0
-            for granular_width in torch.unique(
+            int(elastic_width): 0
+            for elastic_width in torch.unique(
                 torch.cat([self.eval_elastic_widths, self.train_elastic_widths])
             )
         }
         self.num_updates_skipped = {
-            int(granular_width): 0
-            for granular_width in torch.unique(
+            int(elastic_width): 0
+            for elastic_width in torch.unique(
                 torch.cat([self.eval_elastic_widths, self.train_elastic_widths])
             )
         }
@@ -304,8 +304,8 @@ class Trainer:
         return weights / weights.sum()
 
     def update_granularity_sample_counts(self, sampled_granularities):
-        for granular_width in sampled_granularities:
-            self.granularity_sample_counts[int(granular_width)] += 1
+        for elastic_width in sampled_granularities:
+            self.granularity_sample_counts[int(elastic_width)] += 1
 
     def log_metric(
         self,
@@ -339,14 +339,14 @@ class Trainer:
             for metric_name, metric_value in metrics_dict[granularity_label].items():
                 log_dict[f"{mode}/{metric_name}/{granularity_label}"] = metric_value
 
-        for granular_width in self.granularity_sample_counts:
-            granularity_label = f"elastic_{granular_width}"
+        for elastic_width in self.granularity_sample_counts:
+            granularity_label = f"elastic_{elastic_width}"
             log_dict[
                 f"{mode}/num_sampled_times/{granularity_label}"
-            ] = self.granularity_sample_counts[granular_width]
+            ] = self.granularity_sample_counts[elastic_width]
             log_dict[
                 f"{mode}/num_updates_skipped/{granularity_label}"
-            ] = self.num_updates_skipped[granular_width]
+            ] = self.num_updates_skipped[elastic_width]
 
         log_dict[f"{mode}/elapsed_time"] = elapsed_time
         if axis_key is not None:
@@ -448,15 +448,15 @@ class Trainer:
         images_dict = {}
 
         # Rendering for different granularities.
-        for granular_width in tqdm.tqdm(
+        for elastic_width in tqdm.tqdm(
             self.eval_elastic_widths, desc="Granular Widths", leave=False
         ):
             torch.cuda.empty_cache()
-            granular_width = int(granular_width)
-            granularity_label = f"elastic_{granular_width}"
+            elastic_width = int(elastic_width)
+            granularity_label = f"elastic_{elastic_width}"
             kwargs = {}
             if self.config.radiance_field.mlp.use_elastic:
-                kwargs["active_neurons"] = granular_width
+                kwargs["active_neurons"] = elastic_width
             rgb, acc, depth, n_rendering_samples = render_image_with_occgrid(
                 self.radiance_field,
                 self.estimator,
@@ -672,9 +672,9 @@ class Trainer:
             density_sum = None
             count = 0
             # Compute the mean density across all granular widths.
-            for granular_width in granularities_to_sample:
+            for elastic_width in granularities_to_sample:
                 density = self.radiance_field.query_density(
-                    x, active_neurons=int(granular_width)
+                    x, active_neurons=int(elastic_width)
                 )
                 if density_sum is None:
                     density_sum = density
@@ -692,14 +692,14 @@ class Trainer:
 
         loss_dict = {}
         metrics_dict = {}
-        for granular_width in granularities_to_sample:
+        for elastic_width in granularities_to_sample:
             torch.cuda.empty_cache()
-            granular_width = int(granular_width)
-            granularity_label = f"elastic_{granular_width}"
+            elastic_width = int(elastic_width)
+            granularity_label = f"elastic_{elastic_width}"
 
             kwargs = {}
             if self.config.radiance_field.mlp.use_elastic:
-                kwargs["active_neurons"] = granular_width
+                kwargs["active_neurons"] = elastic_width
             rgb, acc, depth, n_rendering_samples = render_image_with_occgrid(
                 self.radiance_field,
                 self.estimator,
