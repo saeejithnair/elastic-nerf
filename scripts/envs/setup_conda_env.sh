@@ -125,12 +125,11 @@ else
   # Install package if not already installed.
   echo "$PACKAGE_NAME is not installed. Installing ${PACKAGE_NAME}..."
   git submodule update --init --recursive
-  HOST_PROJECT_DIR="${HOST_WORKSPACE_PATH}/elastic_nerf"
+  HOST_PROJECT_DIR="${HOST_WORKSPACE_PATH}/elastic-nerf/elastic_nerf"
   cd ${HOST_PROJECT_DIR} && \
-    pip install -e . && \
-    dvc pull && dvc checkout
+    pip install -e .
 
   # Install gonas.
-  cd ${HOST_PROJECT_DIR}/third-party/nas-sandbox && \
+  cd ${HOST_PROJECT_DIR}/third-party/gonas && \
     pip install -e .
 fi
