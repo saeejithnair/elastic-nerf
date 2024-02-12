@@ -2,7 +2,7 @@ name: ngp_prop-mipnerf360-four_granularities-granular_norm
 project: elastic-nerf
 entity: saeejithn
 method: grid
-description: This performs a sweep over mipnerf360 dataset with full size nerfacc accelerated elastic ngp prop model with and without elasticity on each subnetwork jointly optimized with 4 granularities.
+description: This performs a sweep over mipnerf360 dataset with full size nerfacc accelerated elastic ngp prop model with and without elasticity on each subnetwork jointly optimized with 4 widths.
 parameters:
   dataset:
     value: mipnerf360
@@ -15,12 +15,12 @@ parameters:
       - kitchen
       - room
       - stump
-  granularities-sample-prob:
+  widths-sample-prob:
     values:
       - uniform
-  num-train-granularities:
+  num-train-widths:
     value: 4
-  num-granularities-to-sample:
+  num-widths-to-sample:
     values:
       - 4
   radiance-field.use-elastic:

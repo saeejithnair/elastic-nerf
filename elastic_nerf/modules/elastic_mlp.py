@@ -130,7 +130,7 @@ class GranularNorm(nn.Module):
     allows for learned scaling and shifting of each feature through gamma and beta parameters.
 
     Attributes:
-        num_features (int): Maximum number of features (F) across all granularities.
+        num_features (int): Maximum number of features (F) across all widths.
         eps (float): A small value added for numerical stability in normalization calculations.
         gamma (torch.nn.Parameter): Learnable scaling parameters for each feature.
         beta (torch.nn.Parameter): Learnable shifting parameters for each feature.

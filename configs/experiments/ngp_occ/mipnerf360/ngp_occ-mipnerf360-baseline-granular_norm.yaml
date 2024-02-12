@@ -15,9 +15,9 @@ parameters:
       - kitchen
       - room
       - stump
-  num-train-granularities:
+  num-train-widths:
     value: 1
-  num-granularities-to-sample:
+  num-widths-to-sample:
     values:
       - 1
   radiance-field.use-elastic:

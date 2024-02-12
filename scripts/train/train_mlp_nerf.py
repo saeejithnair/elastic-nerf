@@ -74,7 +74,7 @@ class TrainerConfig(InstantiateConfig):
         "matroyshka",
         "matroyshka-reverse",
     ] = "exp-reverse"
-    """Sampling strategy for granularities."""
+    """Sampling strategy for widths."""
     hidden_dim: int = 256
     """The hidden dimension of the MLP."""
     test_chunk_size: int = 4096
@@ -84,13 +84,13 @@ class TrainerConfig(InstantiateConfig):
     target_sample_batch_size: int = 1 << 16
     """Target sample batch size."""
     num_train_granularities: int = 6
-    """Number of granularities to use for training."""
+    """Number of widths to use for training."""
     num_granularities_to_sample: int = 1
-    """Number of granularities to sample for each training step."""
+    """Number of widths to sample for each training step."""
     eval_elastic_widths: List[int] = field(
         default_factory=lambda: [256, 128, 64, 32, 16, 8]
     )
-    """Number of granularities to use for evaluation."""
+    """Number of widths to use for evaluation."""
     max_steps: int = 50000
     """Maximum number of training steps."""
     num_eval_all_steps: int = 50000
@@ -167,8 +167,8 @@ class Trainer:
         )
 
         # Keep track of how many samples we've seen for each elastic_width.
-        # The keys for this should be the eval granularities so that in our
-        # logs, we can see for certain that the non train granularities have
+        # The keys for this should be the eval widths so that in our
+        # logs, we can see for certain that the non train widths have
         # 0 samples.
         self.granularity_sample_counts = {
             int(elastic_width): 0
@@ -288,7 +288,7 @@ class Trainer:
         return lpips_fn, ssim_fn
 
     def get_granularity_sampling_weights(self, num_granularities: int):
-        """Generates normalized weights for sampling granularities."""
+        """Generates normalized weights for sampling widths."""
         weight_strategies = {
             "exp-optimal": lambda i: math.exp(0.1 * i),
             "exp": lambda i: math.exp(i),
@@ -447,7 +447,7 @@ class Trainer:
         metrics_dict = {}
         images_dict = {}
 
-        # Rendering for different granularities.
+        # Rendering for different widths.
         for elastic_width in tqdm.tqdm(
             self.eval_elastic_widths, desc="Granular Widths", leave=False
         ):
@@ -778,7 +778,7 @@ class Trainer:
         return loss, mse_loss, psnr
 
     def sample_granularities(self):
-        """Sample granularities for training."""
+        """Sample widths for training."""
         num_granularities_to_sample = min(
             len(self.train_elastic_widths), self.config.num_granularities_to_sample
         )

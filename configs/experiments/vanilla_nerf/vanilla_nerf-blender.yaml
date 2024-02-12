@@ -14,14 +14,14 @@ parameters:
       - materials
       - mic
       - ship
-  granularities-sample-prob:
+  widths-sample-prob:
     values:
       - uniform
       - exp-reverse
       - exp
-  num-train-granularities:
+  num-train-widths:
     value: 6
-  num-granularities-to-sample:
+  num-widths-to-sample:
     values:
       - 1
       - 3

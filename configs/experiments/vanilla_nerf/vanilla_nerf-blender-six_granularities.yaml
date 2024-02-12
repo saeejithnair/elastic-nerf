@@ -2,7 +2,7 @@ name: vanilla_nerf-blender-six_granularities
 project: elastic-nerf
 entity: saeejithn
 method: grid
-description: This performs a sweep over blender dataset with nerfacc accelerated vanilla nerf model with joint sampling 6 granularities.
+description: This performs a sweep over blender dataset with nerfacc accelerated vanilla nerf model with joint sampling 6 widths.
 parameters:
   scene:
     values:
@@ -14,12 +14,12 @@ parameters:
       - materials
       - mic
       - ship
-  granularities-sample-prob:
+  widths-sample-prob:
     values:
       - uniform
-  num-train-granularities:
+  num-train-widths:
     value: 6
-  num-granularities-to-sample:
+  num-widths-to-sample:
     values:
       - 6
   radiance-field.mlp.base.use-granular-norm:

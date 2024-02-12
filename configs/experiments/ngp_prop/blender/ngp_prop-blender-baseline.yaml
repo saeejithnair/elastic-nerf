@@ -14,11 +14,11 @@ parameters:
       - materials
       - mic
       - ship
-  num-train-granularities:
+  num-train-widths:
     value: 1
   eval-elastic-widths:
     value: 64
-  num-granularities-to-sample:
+  num-widths-to-sample:
     values:
       - 1
   radiance-field.use-elastic:

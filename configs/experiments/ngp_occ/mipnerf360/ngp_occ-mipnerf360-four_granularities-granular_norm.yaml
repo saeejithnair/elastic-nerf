@@ -2,7 +2,7 @@ name: ngp_occ-mipnerf360-four_granularities-granular_norm
 project: elastic-nerf
 entity: saeejithn
 method: grid
-description: This performs a sweep over mipnerf360 dataset with full size nerfacc accelerated elastic ngp occ model with and without granular norm jointly optimized with 6 granularities.
+description: This performs a sweep over mipnerf360 dataset with full size nerfacc accelerated elastic ngp occ model with and without granular norm jointly optimized with 6 widths.
 parameters:
   dataset:
     value: mipnerf360
@@ -15,12 +15,12 @@ parameters:
       - kitchen
       - room
       - stump
-  granularities-sample-prob:
+  widths-sample-prob:
     values:
       - uniform
-  num-train-granularities:
+  num-train-widths:
     value: 4
-  num-granularities-to-sample:
+  num-widths-to-sample:
     values:
       - 4
   radiance-field.use-elastic:

@@ -205,15 +205,15 @@ class NGPOccTrainerConfig(InstantiateConfig):
         "matroyshka",
         "matroyshka-reverse",
     ] = "exp-reverse"
-    """Sampling strategy for granularities."""
+    """Sampling strategy for widths."""
     hidden_dim: int = 64
     """The hidden dimension of the MLP."""
     num_train_granularities: int = 4
-    """Number of granularities to use for training."""
+    """Number of widths to use for training."""
     num_granularities_to_sample: int = 1
-    """Number of granularities to sample for each training step."""
+    """Number of widths to sample for each training step."""
     eval_elastic_widths: List[int] = field(default_factory=lambda: [64, 32, 16, 8])
-    """Number of granularities to use for evaluation."""
+    """Number of widths to use for evaluation."""
     max_steps: int = 20000
     """Maximum number of training steps."""
     num_eval_all_steps: int = 5000
@@ -465,7 +465,7 @@ class NGPOccTrainer:
         return lpips_fn, ssim_fn
 
     def get_granularity_sampling_weights(self, num_granularities: int):
-        """Generates normalized weights for sampling granularities."""
+        """Generates normalized weights for sampling widths."""
         weight_strategies = {
             "exp-optimal": lambda i: math.exp(0.1 * i),
             "exp": lambda i: math.exp(i),
@@ -634,7 +634,7 @@ class NGPOccTrainer:
         metrics_dict = {}
         images_dict = {}
 
-        # Rendering for different granularities.
+        # Rendering for different widths.
         for elastic_width in tqdm.tqdm(
             self.eval_elastic_widths, desc="Granular Widths", leave=False
         ):
@@ -994,7 +994,7 @@ class NGPOccTrainer:
         return loss, mse_loss, psnr
 
     def sample_granularities(self):
-        """Sample granularities for training."""
+        """Sample widths for training."""
         num_granularities_to_sample = min(
             len(self.train_elastic_widths), self.config.num_granularities_to_sample
         )
