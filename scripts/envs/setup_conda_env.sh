@@ -125,7 +125,7 @@ else
   # Install package if not already installed.
   echo "$PACKAGE_NAME is not installed. Installing ${PACKAGE_NAME}..."
   git submodule update --init --recursive
-  HOST_PROJECT_DIR="${HOST_WORKSPACE_PATH}/elastic-nerf/elastic_nerf"
+  HOST_PROJECT_DIR="${HOST_WORKSPACE_PATH}/elastic-nerf"
   cd ${HOST_PROJECT_DIR} && \
     pip install -e .
 
