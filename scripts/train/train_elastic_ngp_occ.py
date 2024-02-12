@@ -20,7 +20,6 @@ import torch.nn.functional as F
 import torchvision
 import tqdm
 import tyro
-import wandb
 from gonas.configs.base_config import InstantiateConfig, PrintableConfig
 from lpips import LPIPS
 from nerfacc.estimators.occ_grid import OccGridEstimator
@@ -28,6 +27,7 @@ from nerfstudio.configs.config_utils import convert_markup_to_ansi
 from nerfstudio.scripts.downloads.download_data import BlenderDownload
 from torchmetrics.functional import structural_similarity_index_measure
 
+import wandb
 from elastic_nerf.nerfacc.datasets.nerf_360_v2 import SubjectLoader as MipNerf360Loader
 from elastic_nerf.nerfacc.datasets.nerf_synthetic import (
     SubjectLoader as BlenderSyntheticLoader,
@@ -212,7 +212,7 @@ class NGPOccTrainerConfig(InstantiateConfig):
     """Number of granularities to use for training."""
     num_granularities_to_sample: int = 1
     """Number of granularities to sample for each training step."""
-    eval_granular_widths: List[int] = field(default_factory=lambda: [64, 32, 16, 8])
+    eval_elastic_widths: List[int] = field(default_factory=lambda: [64, 32, 16, 8])
     """Number of granularities to use for evaluation."""
     max_steps: int = 20000
     """Maximum number of training steps."""
@@ -267,18 +267,18 @@ class NGPOccTrainer:
         if not config.radiance_field.use_elastic:
             assert config.num_train_granularities == 1
             assert config.num_granularities_to_sample == 1
-            assert config.eval_granular_widths == [config.hidden_dim]
+            assert config.eval_elastic_widths == [config.hidden_dim]
 
         for i in range(config.num_train_granularities):
             train_granularities.append(config.hidden_dim // (2**i))
-        self.train_granular_widths = torch.tensor(train_granularities)
-        self.eval_granular_widths = torch.tensor(config.eval_granular_widths)
+        self.train_elastic_widths = torch.tensor(train_granularities)
+        self.eval_elastic_widths = torch.tensor(config.eval_elastic_widths)
 
         # The sampling weights determine the probability of a granular_width
         # being selected for a forward pass.
         self.granularity_sampling_weights: torch.Tensor = (
             self.get_granularity_sampling_weights(
-                num_granularities=len(self.train_granular_widths),
+                num_granularities=len(self.train_elastic_widths),
             )
         )
 
@@ -287,7 +287,7 @@ class NGPOccTrainer:
         # Initialize the granularity indices and sample counts
         unique_granularities, _ = torch.sort(
             torch.unique(
-                torch.cat([self.eval_granular_widths, self.train_granular_widths])
+                torch.cat([self.eval_elastic_widths, self.train_elastic_widths])
             )
         )
         self.granularity_indices = unique_granularities
@@ -636,7 +636,7 @@ class NGPOccTrainer:
 
         # Rendering for different granularities.
         for granular_width in tqdm.tqdm(
-            self.eval_granular_widths, desc="Granular Widths", leave=False
+            self.eval_elastic_widths, desc="Granular Widths", leave=False
         ):
             torch.cuda.empty_cache()
             granular_width = int(granular_width)
@@ -996,14 +996,14 @@ class NGPOccTrainer:
     def sample_granularities(self):
         """Sample granularities for training."""
         num_granularities_to_sample = min(
-            len(self.train_granular_widths), self.config.num_granularities_to_sample
+            len(self.train_elastic_widths), self.config.num_granularities_to_sample
         )
         granularity_indices = torch.multinomial(
             self.granularity_sampling_weights,
             num_granularities_to_sample,
             replacement=False,
         )
-        return self.train_granular_widths[granularity_indices]
+        return self.train_elastic_widths[granularity_indices]
 
 
 def main(config: NGPOccTrainerConfig):

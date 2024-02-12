@@ -3,7 +3,7 @@ Copyright (c) 2022 Ruilong Li, UC Berkeley.
 """
 
 import random
-from typing import Optional, Sequence
+from typing import List, Optional, Sequence
 
 import numpy as np
 import torch
@@ -163,7 +163,7 @@ def render_image_with_propnet(
     rays: Rays,
     # rendering options
     num_samples: int,
-    num_samples_per_prop: Sequence[int],
+    num_samples_per_prop: List[int],
     near_plane: Optional[float] = None,
     far_plane: Optional[float] = None,
     sampling_type: Literal["uniform", "lindisp"] = "lindisp",

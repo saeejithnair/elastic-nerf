@@ -12,9 +12,7 @@ from typing import Callable, Dict, Literal, Optional, Type, Union
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-from altair import condition
 from gonas.configs.base_config import FlexibleInstantiateConfig, InstantiateConfig
-from traitlets import default
 from typing_extensions import NotRequired, TypedDict
 
 from elastic_nerf.modules.elastic_mlp import GranularNorm, GranularNormConfig
@@ -35,10 +33,10 @@ class MLP(nn.Module):
     def __init__(
         self,
         input_dim: int,  # The number of input tensor channels.
-        output_dim: int = None,  # The number of output tensor channels.
+        output_dim: Optional[int] = None,  # The number of output tensor channels.
         net_depth: int = 8,  # The depth of the MLP.
         net_width: int = 256,  # The width of the MLP.
-        skip_layer: int = 4,  # The layer to add skip layers to.
+        skip_layer: Optional[int] = 4,  # The layer to add skip layers to.
         hidden_init: Callable = nn.init.xavier_uniform_,
         hidden_activation: Callable = nn.ReLU(),
         output_enabled: bool = True,
@@ -216,9 +214,8 @@ class ElasticMLP(nn.Module):
         output_activation: Optional[Callable] = nn.Identity(),
         bias_enabled: bool = True,
         bias_init: Callable = nn.init.zeros_,
-        use_granular_norm: bool = False,
         granular_norm: Optional[GranularNormConfig] = None,
-        granular_widths: Optional[Dict[str, int]] = None,
+        elastic_widths: Optional[Dict[str, int]] = None,
     ):
         super().__init__()
         self.input_dim = input_dim
@@ -233,22 +230,20 @@ class ElasticMLP(nn.Module):
         self.output_activation = output_activation
         self.bias_enabled = bias_enabled
         self.bias_init = bias_init
-        self.use_granular_norm = use_granular_norm
+        self.use_granular_norm = True if granular_norm else False
         self.granular_norm = granular_norm
-        self.granular_widths = granular_widths if granular_widths is not None else {}
+        self.elastic_widths = elastic_widths if elastic_widths is not None else {}
 
         self.hidden_layers = nn.ModuleList()
-        self.norm_layers = nn.ModuleList() if self.use_granular_norm else None
-        if self.use_granular_norm:
-            assert self.granular_norm is not None
+        self.norm_layers = nn.ModuleList() if self.granular_norm else None
 
         in_features = self.input_dim
 
         for i in range(self.net_depth):
             layer_name = f"hidden_layers.{i}"
             layer_width = (
-                self.granular_widths[layer_name]
-                if layer_name in self.granular_widths
+                self.elastic_widths[layer_name]
+                if layer_name in self.elastic_widths
                 else self.net_width
             )
             if layer_width == 0:
@@ -258,7 +253,7 @@ class ElasticMLP(nn.Module):
                 nn.Linear(in_features, layer_width, bias=bias_enabled)
             )
 
-            if self.use_granular_norm:
+            if self.granular_norm:
                 self.norm_layers.append(
                     self.granular_norm.setup(num_features=layer_width)
                 )
@@ -618,38 +613,38 @@ class VanillaNeRFRadianceField(nn.Module):
         return torch.sigmoid(rgb), F.relu(sigma)
 
 
-class TNeRFRadianceField(nn.Module):
-    def __init__(self) -> None:
-        super().__init__()
-        self.posi_encoder = SinusoidalEncoder(3, 0, 4, True)
-        self.time_encoder = SinusoidalEncoder(1, 0, 4, True)
-        self.warp = MLP(
-            input_dim=self.posi_encoder.latent_dim + self.time_encoder.latent_dim,
-            output_dim=3,
-            net_depth=4,
-            net_width=64,
-            skip_layer=2,
-            output_init=functools.partial(torch.nn.init.uniform_, b=1e-4),
-        )
-        self.nerf = VanillaNeRFRadianceField()
+# class TNeRFRadianceField(nn.Module):
+#     def __init__(self) -> None:
+#         super().__init__()
+#         self.posi_encoder = SinusoidalEncoder(3, 0, 4, True)
+#         self.time_encoder = SinusoidalEncoder(1, 0, 4, True)
+#         self.warp = MLP(
+#             input_dim=self.posi_encoder.latent_dim + self.time_encoder.latent_dim,
+#             output_dim=3,
+#             net_depth=4,
+#             net_width=64,
+#             skip_layer=2,
+#             output_init=functools.partial(torch.nn.init.uniform_, b=1e-4),
+#         )
+#         self.nerf = VanillaNeRFRadianceField()
 
-    def query_opacity(self, x, timestamps, step_size):
-        idxs = torch.randint(0, len(timestamps), (x.shape[0],), device=x.device)
-        t = timestamps[idxs]
-        density = self.query_density(x, t)
-        # if the density is small enough those two are the same.
-        # opacity = 1.0 - torch.exp(-density * step_size)
-        opacity = density * step_size
-        return opacity
+#     def query_opacity(self, x, timestamps, step_size):
+#         idxs = torch.randint(0, len(timestamps), (x.shape[0],), device=x.device)
+#         t = timestamps[idxs]
+#         density = self.query_density(x, t)
+#         # if the density is small enough those two are the same.
+#         # opacity = 1.0 - torch.exp(-density * step_size)
+#         opacity = density * step_size
+#         return opacity
 
-    def query_density(self, x, t):
-        x = x + self.warp(
-            torch.cat([self.posi_encoder(x), self.time_encoder(t)], dim=-1)
-        )
-        return self.nerf.query_density(x)
+#     def query_density(self, x, t):
+#         x = x + self.warp(
+#             torch.cat([self.posi_encoder(x), self.time_encoder(t)], dim=-1)
+#         )
+#         return self.nerf.query_density(x)
 
-    def forward(self, x, t, condition=None):
-        x = x + self.warp(
-            torch.cat([self.posi_encoder(x), self.time_encoder(t)], dim=-1)
-        )
-        return self.nerf(x, condition=condition)
+#     def forward(self, x, t, condition=None):
+#         x = x + self.warp(
+#             torch.cat([self.posi_encoder(x), self.time_encoder(t)], dim=-1)
+#         )
+#         return self.nerf(x, condition=condition)
