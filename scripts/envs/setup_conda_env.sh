@@ -63,7 +63,7 @@ mkdir -p ${CONDA_PREFIX}/etc/conda/deactivate.d
 # Create and modify activate script
 echo '#!/bin/sh' > ${CONDA_PREFIX}/etc/conda/activate.d/env_vars.sh
 echo 'set -o allexport' >> ${CONDA_PREFIX}/etc/conda/activate.d/env_vars.sh
-echo "source $SCRIPT_DIR/../.env" >> ${CONDA_PREFIX}/etc/conda/activate.d/env_vars.sh
+echo "source $SCRIPT_DIR/../../.env" >> ${CONDA_PREFIX}/etc/conda/activate.d/env_vars.sh
 echo 'set +o allexport' >> ${CONDA_PREFIX}/etc/conda/activate.d/env_vars.sh
 echo "export OLD_PATH=$PATH" >> ${CONDA_PREFIX}/etc/conda/activate.d/env_vars.sh
 echo "export OLD_LD_LIBRARY_PATH=$LD_LIBRARY_PATH" >> ${CONDA_PREFIX}/etc/conda/activate.d/env_vars.sh
