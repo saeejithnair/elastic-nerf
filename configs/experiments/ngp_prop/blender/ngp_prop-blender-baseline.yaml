@@ -2,7 +2,7 @@ name: ngp_prop-blender-baseline
 project: elastic-nerf
 entity: saeejithn
 method: grid
-description: This performs a sweep over blender dataset with baseline ngp occ model.
+description: This performs a sweep over blender dataset with baseline ngp prop model.
 parameters:
   scene:
     values:
@@ -26,5 +26,5 @@ parameters:
       - False
 command:
   - python
-  - scripts/train/train_elastic_ngp_occ.py
+  - scripts/train/train_elastic_ngp_prop.py
   - ${args}

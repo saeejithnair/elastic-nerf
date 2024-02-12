@@ -2,7 +2,7 @@ name: ngp_prop-blender-four_granularities-granular_norm
 project: elastic-nerf
 entity: saeejithn
 method: grid
-description: This performs a sweep over blender dataset with full size nerfacc accelerated elastic ngp occ model with and without granular norm jointly optimized with 6 widths.
+description: This performs a sweep over blender dataset with full size nerfacc accelerated elastic ngp prop model with and without granular norm jointly optimized with 6 widths.
 parameters:
   scene:
     values:
@@ -31,5 +31,5 @@ parameters:
       - False
 command:
   - python
-  - scripts/train/train_elastic_ngp_occ.py
+  - scripts/train/train_elastic_ngp_prop.py
   - ${args}
