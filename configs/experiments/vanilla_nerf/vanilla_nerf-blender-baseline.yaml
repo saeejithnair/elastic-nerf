@@ -16,7 +16,7 @@ parameters:
       - ship
   num-train-granularities:
     value: 1
-  eval-granular-widths:
+  eval-elastic-widths:
     value: 256
   num-granularities-to-sample:
     values:

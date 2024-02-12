@@ -17,7 +17,7 @@ parameters:
       - stump
   num-train-granularities:
     value: 1
-  eval-granular-widths:
+  eval-elastic-widths:
     value: 64
   num-granularities-to-sample:
     values:
