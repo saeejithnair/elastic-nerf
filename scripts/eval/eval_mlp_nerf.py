@@ -60,7 +60,7 @@ parser.add_argument(
     help="which scene to use",
 )
 
-GRANULARITIES_SAMPLE_PROB = [
+SAMPLING_STRATEGIES = [
     "uniform",
     "exp-optimal",
     "exp-optimal-reverse",
@@ -70,10 +70,10 @@ GRANULARITIES_SAMPLE_PROB = [
     "matroyshka-reverse",
 ]
 parser.add_argument(
-    "--granularities_sample_prob",
+    "--sampling_strategy",
     type=str,
     default="exp-reverse",
-    choices=GRANULARITIES_SAMPLE_PROB,
+    choices=SAMPLING_STRATEGIES,
     help="sampling strategy for widths",
 )
 parser.add_argument(
@@ -82,12 +82,12 @@ parser.add_argument(
     default=4096,
 )
 parser.add_argument(
-    "--num_train_granularities",
+    "--num_train_widths",
     type=int,
     default=6,
 )
 parser.add_argument(
-    "--num_granularities_to_sample",
+    "--num_widths_to_sample",
     type=int,
     default=1,
 )
@@ -111,14 +111,14 @@ args = parser.parse_args()
 # args.data_root = "/pub2/shared/nerf/nerfstudio/data/blender"
 # args.scene = "drums"
 # args.use_elastic = True
-# args.num_granularities_to_sample = 6
+# args.num_widths_to_sample = 6
 # args.granular_norm = "var"
 # args.model_path = "/home/smnair/work/nerf/nerf-optimization/src/gen-nerf/scripts/kinder/mlp_nerf_drums_train_exp-reverse_6_6_6_var_True_50000.pt"
 
 if args.granular_norm == "None":
     args.granular_norm = None
 
-args_label = f"{args.scene}_{args.train_split}_{args.granularities_sample_prob}_{args.num_train_granularities}_{args.num_granularities_to_sample}_{args.num_eval_granularities}_{args.granular_norm}_{args.use_elastic}"
+args_label = f"{args.scene}_{args.train_split}_{args.sampling_strategy}_{args.num_train_widths}_{args.num_widths_to_sample}_{args.num_eval_granularities}_{args.granular_norm}_{args.use_elastic}"
 # training parameters
 max_steps = 50000
 init_batch_size = 1024
@@ -150,7 +150,7 @@ estimator = OccGridEstimator(
 # setup the radiance field we want to train.
 radiance_field = VanillaNeRFRadianceField(
     use_elastic=args.use_elastic,
-    num_granularities=args.num_train_granularities,
+    num_granularities=args.num_train_widths,
     granular_norm=args.granular_norm,
 ).to(device)
 optimizer = torch.optim.Adam(radiance_field.parameters(), lr=5e-4)
@@ -182,29 +182,29 @@ else:
 
 def get_granularity_sampling_weights(num_granularities: int) -> torch.Tensor:
     """Generates normalized weights for sampling widths."""
-    if args.granularities_sample_prob == "exp-optimal":
+    if args.sampling_strategy == "exp-optimal":
         weights = torch.tensor([math.exp(0.1 * i) for i in range(num_granularities)])
-    elif args.granularities_sample_prob == "exp-optimal-reverse":
+    elif args.sampling_strategy == "exp-optimal-reverse":
         weights = torch.tensor(
             [math.exp(0.1 * i) for i in range(num_granularities)]
         ).flip(
             0,
         )
-    elif args.granularities_sample_prob == "exp":
+    elif args.sampling_strategy == "exp":
         weights = torch.tensor([math.exp(i) for i in range(num_granularities)])
-    elif args.granularities_sample_prob == "exp-reverse":
+    elif args.sampling_strategy == "exp-reverse":
         weights = torch.tensor([math.exp(i) for i in range(num_granularities)]).flip(
             0,
         )
-    elif args.granularities_sample_prob == "matroyshka":
+    elif args.sampling_strategy == "matroyshka":
         weights = torch.tensor([math.sqrt(2**i) for i in range(num_granularities)])
-    elif args.granularities_sample_prob == "matroyshka-reverse":
+    elif args.sampling_strategy == "matroyshka-reverse":
         weights = torch.tensor(
             [math.sqrt(2**i) for i in range(num_granularities)]
         ).flip(
             0,
         )
-    elif args.granularities_sample_prob == "uniform":
+    elif args.sampling_strategy == "uniform":
         weights = torch.ones(num_granularities)
     else:
         raise NotImplementedError
@@ -212,9 +212,7 @@ def get_granularity_sampling_weights(num_granularities: int) -> torch.Tensor:
     return weights / weights.sum()
 
 
-train_granularities = torch.tensor(
-    [2**i for i in range(args.num_train_granularities)]
-)
+train_granularities = torch.tensor([2**i for i in range(args.num_train_widths)])
 eval_granularities = torch.tensor([2**i for i in range(args.num_eval_granularities)])
 
 # The sampling weights determine the probability of a granularity

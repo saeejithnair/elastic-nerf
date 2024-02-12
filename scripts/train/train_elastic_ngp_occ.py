@@ -196,7 +196,7 @@ class NGPOccTrainerConfig(InstantiateConfig):
     """Which scene to use."""
     model_path: Optional[Path] = None
     """The path of the pretrained model."""
-    granularities_sample_prob: Literal[
+    sampling_strategy: Literal[
         "uniform",
         "exp-optimal",
         "exp-optimal-reverse",
@@ -208,9 +208,9 @@ class NGPOccTrainerConfig(InstantiateConfig):
     """Sampling strategy for widths."""
     hidden_dim: int = 64
     """The hidden dimension of the MLP."""
-    num_train_granularities: int = 4
+    num_train_widths: int = 4
     """Number of widths to use for training."""
-    num_granularities_to_sample: int = 1
+    num_widths_to_sample: int = 1
     """Number of widths to sample for each training step."""
     eval_elastic_widths: List[int] = field(default_factory=lambda: [64, 32, 16, 8])
     """Number of widths to use for evaluation."""
@@ -265,11 +265,11 @@ class NGPOccTrainer:
 
         train_granularities = []
         if not config.radiance_field.use_elastic:
-            assert config.num_train_granularities == 1
-            assert config.num_granularities_to_sample == 1
+            assert config.num_train_widths == 1
+            assert config.num_widths_to_sample == 1
             assert config.eval_elastic_widths == [config.hidden_dim]
 
-        for i in range(config.num_train_granularities):
+        for i in range(config.num_train_widths):
             train_granularities.append(config.hidden_dim // (2**i))
         self.train_elastic_widths = torch.tensor(train_granularities)
         self.eval_elastic_widths = torch.tensor(config.eval_elastic_widths)
@@ -324,9 +324,9 @@ class NGPOccTrainer:
             "Hidden Dim": self.config.hidden_dim,
             "Elastic": self.config.radiance_field.use_elastic,
             "Granular Norm": self.config.radiance_field.base.use_granular_norm,
-            "Train Granularities": self.config.num_train_granularities,
-            "Sampling Strategy": self.config.granularities_sample_prob,
-            "Num Samples": self.config.num_granularities_to_sample,
+            "Train Granularities": self.config.num_train_widths,
+            "Sampling Strategy": self.config.sampling_strategy,
+            "Num Samples": self.config.num_widths_to_sample,
         }
 
         self.eval_table_columns = [
@@ -473,10 +473,10 @@ class NGPOccTrainer:
         }
         # Get the specified strategy or default to uniform.
         strategy = weight_strategies.get(
-            self.config.granularities_sample_prob.replace("-reverse", ""), lambda i: 1
+            self.config.sampling_strategy.replace("-reverse", ""), lambda i: 1
         )
         weights = torch.tensor([strategy(i) for i in range(num_granularities)])
-        if "reverse" in self.config.granularities_sample_prob:
+        if "reverse" in self.config.sampling_strategy:
             weights = weights.flip(0)
         return weights / weights.sum()
 
@@ -860,10 +860,7 @@ class NGPOccTrainer:
                         > self.dataset.num_dynamic_batch_warmup_steps
                     )
                 )
-                else (
-                    self.dataset.init_batch_size
-                    // self.config.num_granularities_to_sample
-                )
+                else (self.dataset.init_batch_size // self.config.num_widths_to_sample)
             )
             self.train_dataset.update_num_rays(num_rays)
 
@@ -911,7 +908,7 @@ class NGPOccTrainer:
             * (
                 (
                     self.dataset.target_sample_batch_size
-                    / self.config.num_granularities_to_sample
+                    / self.config.num_widths_to_sample
                 )
                 / n_rendering_samples
             )
@@ -995,12 +992,12 @@ class NGPOccTrainer:
 
     def sample_granularities(self):
         """Sample widths for training."""
-        num_granularities_to_sample = min(
-            len(self.train_elastic_widths), self.config.num_granularities_to_sample
+        num_widths_to_sample = min(
+            len(self.train_elastic_widths), self.config.num_widths_to_sample
         )
         granularity_indices = torch.multinomial(
             self.granularity_sampling_weights,
-            num_granularities_to_sample,
+            num_widths_to_sample,
             replacement=False,
         )
         return self.train_elastic_widths[granularity_indices]

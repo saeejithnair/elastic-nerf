@@ -65,7 +65,7 @@ class TrainerConfig(InstantiateConfig):
         "chair", "drums", "ficus", "hotdog", "lego", "materials", "mic", "ship"
     ] = "lego"
     """Which scene to use."""
-    granularities_sample_prob: Literal[
+    sampling_strategy: Literal[
         "uniform",
         "exp-optimal",
         "exp-optimal-reverse",
@@ -83,9 +83,9 @@ class TrainerConfig(InstantiateConfig):
     """Initial batch size."""
     target_sample_batch_size: int = 1 << 16
     """Target sample batch size."""
-    num_train_granularities: int = 6
+    num_train_widths: int = 6
     """Number of widths to use for training."""
-    num_granularities_to_sample: int = 1
+    num_widths_to_sample: int = 1
     """Number of widths to sample for each training step."""
     eval_elastic_widths: List[int] = field(
         default_factory=lambda: [256, 128, 64, 32, 16, 8]
@@ -149,11 +149,11 @@ class Trainer:
 
         train_granularities = []
         if not config.radiance_field.mlp.use_elastic:
-            assert config.num_train_granularities == 1
-            assert config.num_granularities_to_sample == 1
+            assert config.num_train_widths == 1
+            assert config.num_widths_to_sample == 1
             assert config.eval_elastic_widths == [config.hidden_dim]
 
-        for i in range(config.num_train_granularities):
+        for i in range(config.num_train_widths):
             train_granularities.append(config.hidden_dim // (2**i))
         self.train_elastic_widths = torch.tensor(train_granularities)
         self.eval_elastic_widths = torch.tensor(config.eval_elastic_widths)
@@ -296,10 +296,10 @@ class Trainer:
         }
         # Get the specified strategy or default to uniform.
         strategy = weight_strategies.get(
-            self.config.granularities_sample_prob.replace("-reverse", ""), lambda i: 1
+            self.config.sampling_strategy.replace("-reverse", ""), lambda i: 1
         )
         weights = torch.tensor([strategy(i) for i in range(num_granularities)])
-        if "reverse" in self.config.granularities_sample_prob:
+        if "reverse" in self.config.sampling_strategy:
             weights = weights.flip(0)
         return weights / weights.sum()
 
@@ -779,12 +779,12 @@ class Trainer:
 
     def sample_granularities(self):
         """Sample widths for training."""
-        num_granularities_to_sample = min(
-            len(self.train_elastic_widths), self.config.num_granularities_to_sample
+        num_widths_to_sample = min(
+            len(self.train_elastic_widths), self.config.num_widths_to_sample
         )
         granularity_indices = torch.multinomial(
             self.granularity_sampling_weights,
-            num_granularities_to_sample,
+            num_widths_to_sample,
             replacement=False,
         )
         return self.train_elastic_widths[granularity_indices]

@@ -14,7 +14,7 @@ parameters:
       - materials
       - mic
       - ship
-  widths-sample-prob:
+  sampling-strategy:
     values:
       - uniform
       - exp-reverse
