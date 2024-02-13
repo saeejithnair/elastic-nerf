@@ -108,6 +108,8 @@ class DataTablePlotter:
         self.fig.update_layout(
             width=1000,
             showlegend=True,
+            minreducedheight=200,
+            height=200,
             colorscale=go.layout.Colorscale(diverging="rdylgn"),
             updatemenus=[
                 {
@@ -115,11 +117,11 @@ class DataTablePlotter:
                     "direction": "left",
                     "buttons": buttons,
                     "active": 1,
-                    "pad": {"r": 10, "t": 10},
+                    "pad": {"r": 0, "t": 0},
                     "showactive": True,
                     "x": 0.1,
                     "xanchor": "left",
-                    "y": 1.15,
+                    "y": 1.195,
                     "yanchor": "top",
                 }
             ],

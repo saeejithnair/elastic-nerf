@@ -44,7 +44,12 @@ api = Api(timeout=19)
 class RunResult:
     """Encapsulates the attributes we care about from a run."""
 
-    def __init__(self, run: WandbPublicRun, download_history: bool = False):
+    def __init__(
+        self,
+        run: WandbPublicRun,
+        download_history: bool = False,
+        tables: Optional[List[str]] = None,
+    ):
         self.run_id = run.id
         try:
             self.config = run.config
@@ -52,6 +57,8 @@ class RunResult:
             if download_history:
                 self.history = self.download_history(run)
             self.summary = self.download_summary(run)
+            if tables is not None:
+                self.tables = self.download_tables(run, tables)
         except Exception as e:
             lu.error(f"An error occurred while fetching run {run.id}: {e}")
             raise e
@@ -71,6 +78,25 @@ class RunResult:
                 summary_dict = json.load(f)
 
             return summary_dict
+
+    @staticmethod
+    def download_tables(run: WandbPublicRun, tables: List[str]) -> Dict:
+        """Downloads the table artifacts for a run and returns the table dict."""
+        table_dict = {}
+        for table_name in tables:
+            artifact_name = f"run-{run.id}-{table_name}"
+            table = try_fetch_artifact(artifact_name=artifact_name)
+
+            if table is None:
+                lu.error(f"Unable to find artifact {artifact_name} on WandB.")
+                table_dict[table_name] = None
+            else:
+                # Download the table artifact to a temporary directory and then delete afterwards.
+                with tempfile.TemporaryDirectory() as temp_dir:
+                    table.download(root=temp_dir)
+                    table_dict[table_name] = pd.read_csv(table.name)
+
+        return table_dict
 
     @staticmethod
     def download_history(run: WandbPublicRun) -> pd.DataFrame:
@@ -94,6 +120,7 @@ def fetch_run_result(
     run_id: str,
     project_name: str = PROJECT_NAME,
     cache: bool = True,
+    refresh_cache: bool = False,
     download_history: bool = False,
 ) -> RunResult:
     """Fetch a run from W&B."""
@@ -104,7 +131,7 @@ def fetch_run_result(
     cache_file = os.path.join(cache_dir, f"{run_id}_results.pkl")
 
     # If a cached result exists, load and return it
-    if cache and os.path.exists(cache_file):
+    if cache and not refresh_cache and os.path.exists(cache_file):
         lu.warning(f"Using cached results for run {run_id}")
         with open(cache_file, "rb") as f:
             return pickle.load(f)
@@ -124,9 +151,9 @@ def fetch_sweep(sweep_id: str, project_name: str = PROJECT_NAME) -> Sweep:
 
 
 def fetch_sweep_results(
-    sweep: Union[str, Sweep], cache: bool = True
+    sweep: Union[str, Sweep], cache: bool = True, refresh_cache: bool = True
 ) -> List[RunResult]:
-    """Fetch summary data for all runs in a sweep."""
+    """Fetch summary data for all runs in a sweep, with optional caching."""
     if isinstance(sweep, str):
         sweep_id = sweep
         sweep = fetch_sweep(sweep)
@@ -138,16 +165,18 @@ def fetch_sweep_results(
     cache_dir.mkdir(parents=True, exist_ok=True)
     cache_file = os.path.join(cache_dir, f"{sweep_id}_results.pkl")
 
-    # If a cached result exists, load and return it
-    if cache and os.path.exists(cache_file):
+    # Load from cache if available and not refreshing
+    if cache and not refresh_cache and os.path.exists(cache_file):
         lu.warning(f"Using cached results for sweep {sweep_id}")
         with open(cache_file, "rb") as f:
             return pickle.load(f)
 
-    # Otherwise, fetch the results
+    # Fetch the results
     with concurrent.futures.ThreadPoolExecutor() as executor:
         futures = [
-            executor.submit(fetch_run_result, run.id)
+            executor.submit(
+                fetch_run_result, run.id, cache=cache, refresh_cache=refresh_cache
+            )
             for run in sweep.runs
             if run.state == "finished"
         ]
@@ -160,10 +189,12 @@ def fetch_sweep_results(
                 lu.error(f"Failed to fetch a run due to: {e}")
 
     lu.info(f"Fetched {len(runs)} finished runs out of {len(sweep.runs)} total runs.")
-    # Cache the results
+
+    # Optionally cache the results
     if cache:
         with open(cache_file, "wb") as f:
             pickle.dump(runs, f)
+            lu.info(f"Cached results for sweep {sweep_id}.")
 
     return runs
 
@@ -390,10 +421,10 @@ def save_file(
 
 
 def try_fetch_artifact(
-    artifact_name: str, project=PROJECT, entity=ENTITY
+    artifact_name: str, project=PROJECT, entity=ENTITY, version: str = "latest"
 ) -> Union[Artifact, None]:
     try:
-        artifact = api.artifact(f"{entity}/{project}/{artifact_name}:latest")
+        artifact = api.artifact(f"{entity}/{project}/{artifact_name}:{version}")
         return artifact
     except Exception as e:
         return None
