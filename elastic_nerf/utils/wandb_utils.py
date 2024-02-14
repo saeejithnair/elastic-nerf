@@ -1,8 +1,11 @@
 import concurrent.futures
+import functools
+import glob
 import json
 import os
 import pickle
 import tempfile
+import time
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
 from pathlib import Path
@@ -10,6 +13,7 @@ from typing import Any, Dict, List, Optional, Tuple, Union
 
 import gonas.utils.logging_utils as lu
 import pandas as pd
+from tomlkit import table
 from wandb.apis.public import Api, File
 from wandb.apis.public import Run as WandbPublicRun
 from wandb.apis.public import Sweep
@@ -24,6 +28,28 @@ CACHE_DIR: str = "/home/user/shared/wandb_cache"
 PROJECT: str = "elastic-nerf"
 ENTITY: str = "saeejithn"
 PROJECT_NAME: str = f"{ENTITY}/{PROJECT}"
+
+
+def retry(num_retries=3, initial_delay=5, backoff_factor=2):
+    def decorator_retry(func):
+        @functools.wraps(func)
+        def wrapper(*args, **kwargs):
+            delay = initial_delay
+            for attempt in range(num_retries):
+                try:
+                    return func(*args, **kwargs)
+                except Exception as e:
+                    if attempt == num_retries - 1:  # Last attempt
+                        raise e
+                    time.sleep(delay)
+                    delay *= backoff_factor  # Increase delay for the next attempt
+                    lu.error(
+                        f"Retry {attempt + 1} for function {func.__name__} after error: {e}"
+                    )
+
+        return wrapper
+
+    return decorator_retry
 
 
 if not Path(CACHE_DIR).exists():
@@ -49,8 +75,13 @@ class RunResult:
         run: WandbPublicRun,
         download_history: bool = False,
         tables: Optional[List[str]] = None,
+        cache_dir: Optional[Path] = None,
     ):
         self.run_id = run.id
+        if cache_dir is not None:
+            cache_dir.mkdir(parents=True, exist_ok=True)
+
+        self.cache_dir = cache_dir
         try:
             self.config = run.config
             self.state = run.state
@@ -58,12 +89,54 @@ class RunResult:
                 self.history = self.download_history(run)
             self.summary = self.download_summary(run)
             if tables is not None:
-                self.tables = self.download_tables(run, tables)
+                if self.cache_dir is None:
+                    raise ValueError(
+                        "Cache dir must be provided to download tables for a run."
+                    )
+                self.tables = self.download_tables(run, tables, self.cache_dir)
         except Exception as e:
             lu.error(f"An error occurred while fetching run {run.id}: {e}")
             raise e
 
+    def update_missing_attributes(
+        self,
+        run: WandbPublicRun,
+        download_history: bool,
+        tables: Optional[List[str]] = None,
+        cache_dir: Optional[Path] = None,
+    ) -> bool:
+        attributes_updated = False
+        # Update history if needed
+        if download_history and not hasattr(self, "history"):
+            print(f"Missing attribute history for run {run.id}.")
+            self.history = self.download_history(run)
+            attributes_updated = True
+
+        # Update tables if needed
+        if tables:
+            if cache_dir is None:
+                raise ValueError(
+                    "Cache dir must be provided to download tables for a run."
+                )
+
+            if not hasattr(self, "tables"):
+                self.tables = self.download_tables(run, tables, cache_dir)
+                attributes_updated = True
+            else:
+                for table_name in tables:
+                    if table_name not in self.tables or self.tables[table_name] is None:
+                        df_tables = self.download_table(run, table_name, cache_dir)
+                        if df_tables is None:
+                            self.tables[table_name] = None
+                            attributes_updated = True
+                        else:
+                            self.tables.update(df_tables)
+                            attributes_updated = True
+
+        return attributes_updated
+
     @staticmethod
+    @retry(num_retries=3)
     def download_summary(run: WandbPublicRun) -> Dict:
         """Downloads the wandb-summary.json file for a run and returns the summary dict."""
         file: File = run.file("wandb-summary.json")  # type: ignore
@@ -80,25 +153,66 @@ class RunResult:
             return summary_dict
 
     @staticmethod
-    def download_tables(run: WandbPublicRun, tables: List[str]) -> Dict:
+    @retry(num_retries=3)
+    def download_table(
+        run: WandbPublicRun,
+        table_name: str,
+        cache_dir: Path,
+        versions: Optional[List[int]] = None,
+    ) -> Optional[Dict[str, pd.DataFrame]]:
+        artifact_name = f"run-{run.id}-{table_name}"
+        artifact = try_fetch_artifact(artifact_name=artifact_name)
+        if artifact is None:
+            lu.error(f"Unable to find artifact {artifact_name} on WandB.")
+            return None
+
+        artifact_versions = list(artifact.collection.artifacts())[::-1]
+
+        if versions is not None:
+            artifacts = [artifact_versions[i] for i in versions]
+        else:
+            artifacts = [artifact_versions[-1]]
+            versions = [len(artifact_versions) - 1]
+
+        tables = {}
+        for version_idx, table in zip(versions, artifacts):
+            version = f"v{version_idx}"
+            table_name_versioned = f"{table_name}_{version}"
+            table_dir = cache_dir / table_name_versioned
+            print(f"Downloading table {artifact_name} for run {run.id} to {table_dir}")
+            table_path = table.download(root=table_dir.as_posix())
+            table_json_path = f"{table_path}/**/**.table.json"
+            table_json = glob.glob(table_json_path, recursive=True)
+            assert (
+                len(table_json) == 1
+            ), f"Expected 1 table.json file, found {len(table_json)} files in {table_json_path}."
+
+            tables[table_name_versioned] = parse_wandb_table_json_to_dataframe(
+                table_json[0]
+            )
+
+        return tables
+
+    @staticmethod
+    def download_tables(
+        run: WandbPublicRun,
+        tables: List[str],
+        cache_dir: Path,
+        versions: Optional[List[int]] = None,
+    ) -> Dict:
         """Downloads the table artifacts for a run and returns the table dict."""
         table_dict = {}
         for table_name in tables:
-            artifact_name = f"run-{run.id}-{table_name}"
-            table = try_fetch_artifact(artifact_name=artifact_name)
-
-            if table is None:
-                lu.error(f"Unable to find artifact {artifact_name} on WandB.")
+            df_tables = RunResult.download_table(run, table_name, cache_dir, versions)
+            if df_tables is None:
                 table_dict[table_name] = None
             else:
-                # Download the table artifact to a temporary directory and then delete afterwards.
-                with tempfile.TemporaryDirectory() as temp_dir:
-                    table.download(root=temp_dir)
-                    table_dict[table_name] = pd.read_csv(table.name)
+                table_dict.update(df_tables)
 
         return table_dict
 
     @staticmethod
+    @retry(num_retries=3)
     def download_history(run: WandbPublicRun) -> pd.DataFrame:
         """Processes the run history from a WandB HistoryScan object into a pandas DataFrame."""
         # List to store the data for each step
@@ -112,6 +226,7 @@ class RunResult:
 
         # Convert the list of dictionaries into a DataFrame
         history_df = pd.DataFrame(history_data)
+        print(f"Downloaded history for run {run.id}")
 
         return history_df
 
@@ -122,6 +237,7 @@ def fetch_run_result(
     cache: bool = True,
     refresh_cache: bool = False,
     download_history: bool = False,
+    tables: Optional[List[str]] = None,
 ) -> RunResult:
     """Fetch a run from W&B."""
 
@@ -129,15 +245,31 @@ def fetch_run_result(
     cache_dir = Path(os.path.join(CACHE_DIR, "runs"))
     cache_dir.mkdir(parents=True, exist_ok=True)
     cache_file = os.path.join(cache_dir, f"{run_id}_results.pkl")
-
-    # If a cached result exists, load and return it
-    if cache and not refresh_cache and os.path.exists(cache_file):
-        lu.warning(f"Using cached results for run {run_id}")
-        with open(cache_file, "rb") as f:
-            return pickle.load(f)
+    run_assets_dir = cache_dir / run_id
 
     run = fetch_run(run_id, project_name)
-    run_result = RunResult(run, download_history=download_history)
+    # If a cached result exists, load and return it
+    if cache and not refresh_cache and os.path.exists(cache_file):
+        lu.warning(f"Found cached results for run {run_id}")
+        with open(cache_file, "rb") as f:
+            cached_result: RunResult = pickle.load(f)
+
+        attributes_updated = cached_result.update_missing_attributes(
+            run, download_history, tables, cache_dir=run_assets_dir
+        )
+        if attributes_updated:
+            lu.warning(f"Updated missing attributes for run {run_id}.")
+            with open(cache_file, "wb") as fw:
+                pickle.dump(cached_result, fw)
+
+        return cached_result
+
+    run_result = RunResult(
+        run,
+        download_history=download_history,
+        tables=tables,
+        cache_dir=run_assets_dir,
+    )
 
     if cache:
         with open(cache_file, "wb") as f:
@@ -150,8 +282,25 @@ def fetch_sweep(sweep_id: str, project_name: str = PROJECT_NAME) -> Sweep:
     return api.sweep(f"{project_name}/{sweep_id}")
 
 
+def remove_sweep_results_cache(sweep: Union[str, Sweep]):
+    """Remove the cache file for a sweep."""
+    if isinstance(sweep, str):
+        sweep_id = sweep
+    else:
+        sweep_id = sweep.id
+
+    cache_file = os.path.join(CACHE_DIR, "sweeps", f"{sweep_id}_results.pkl")
+    if os.path.exists(cache_file):
+        os.remove(cache_file)
+        lu.info(f"Removed cached results for sweep {sweep_id}.")
+
+
 def fetch_sweep_results(
-    sweep: Union[str, Sweep], cache: bool = True, refresh_cache: bool = True
+    sweep: Union[str, Sweep],
+    cache: bool = True,
+    refresh_cache: bool = False,
+    download_history: bool = False,
+    tables: Optional[List[str]] = None,
 ) -> List[RunResult]:
     """Fetch summary data for all runs in a sweep, with optional caching."""
     if isinstance(sweep, str):
@@ -175,7 +324,12 @@ def fetch_sweep_results(
     with concurrent.futures.ThreadPoolExecutor() as executor:
         futures = [
             executor.submit(
-                fetch_run_result, run.id, cache=cache, refresh_cache=refresh_cache
+                fetch_run_result,
+                run.id,
+                cache=cache,
+                refresh_cache=refresh_cache,
+                download_history=download_history,
+                tables=tables,
             )
             for run in sweep.runs
             if run.state == "finished"
@@ -521,3 +675,17 @@ def download_latest_checkpoint(run_id: str) -> Path:
 
 def compose_artifact_name(run_id: str, artifact_suffix: str) -> str:
     return f"{run_id}-{artifact_suffix}"
+
+
+def parse_wandb_table_json_to_dataframe(json_file_path):
+    with open(json_file_path, "r") as f:
+        json_data = json.load(f)
+
+    # Extract the column names and the data
+    columns = json_data["columns"]
+    data = json_data["data"]
+
+    # Create a DataFrame
+    df = pd.DataFrame(data=data, columns=columns)
+
+    return df

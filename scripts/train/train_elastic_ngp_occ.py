@@ -316,6 +316,9 @@ class NGPOccTrainer:
             reinit=True,
             config=config,
         )
+        self.models_to_watch = {
+            "radiance_field": self.radiance_field,
+        }
         wandb.watch(self.radiance_field, log="all", log_graph=True, log_freq=500)
 
         self.exp_config_columns = {
@@ -541,6 +544,16 @@ class NGPOccTrainer:
                 axis_value is not None
             ), f"axis_value must be provided for axis_key: {axis_key}"
             log_dict[axis_key] = axis_value
+
+        if mode == "Train":
+            # Log the model parameters
+            weights = {
+                f"params/{model_name}/{name}": param.data.cpu().numpy()
+                for model_name, model in self.models_to_watch.items()
+                for name, param in model.named_parameters()
+            }
+            log_dict.update(weights)
+
         wandb.log(log_dict, step=self.step, commit=commit)
 
     def preprocess_image(self, image):
