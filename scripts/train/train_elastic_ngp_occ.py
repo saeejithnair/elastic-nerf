@@ -612,6 +612,7 @@ class NGPOccTrainer:
         return preprocessed_images_dict
 
     def log_weights_and_gradients(self):
+        """Log weights and gradients for the models to WandB."""
         for name, model in self.models_to_watch.items():
             # Extract the state_dict for parameters
             params = model.state_dict()
@@ -625,7 +626,7 @@ class NGPOccTrainer:
             torch.save(
                 {"step": self.step, "params": params, "gradients": gradients}, file_path
             )
-
+            wandb.save(str(file_path))
             print(f"Saved weights and gradients for model '{name}' to '{file_path}'")
 
     def log_checkpoint(self):
