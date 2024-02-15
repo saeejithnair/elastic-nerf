@@ -326,7 +326,6 @@ class NGPOccTrainer:
             "Dataset": self.config.dataset,
             "Hidden Dim": self.config.hidden_dim,
             "Elastic": self.config.radiance_field.use_elastic,
-            "Granular Norm": self.config.radiance_field.base.granular_norm is not None,
             "Train Widths": self.config.num_train_widths,
             "Sampling Strategy": self.config.sampling_strategy,
             "Num Samples": self.config.num_widths_to_sample,
