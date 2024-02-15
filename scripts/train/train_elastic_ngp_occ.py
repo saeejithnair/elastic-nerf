@@ -319,7 +319,7 @@ class NGPOccTrainer:
         self.models_to_watch = {
             "radiance_field": self.radiance_field,
         }
-        wandb.watch(self.radiance_field, log="all", log_graph=True, log_freq=500)
+        wandb.watch(self.radiance_field, log="gradients", log_graph=True, log_freq=500)
 
         self.exp_config_columns = {
             "Scene": self.config.scene,
@@ -546,13 +546,7 @@ class NGPOccTrainer:
             log_dict[axis_key] = axis_value
 
         if mode == "Train":
-            # Log the model parameters
-            weights = {
-                f"params/{model_name}/{name}": param.data.cpu().numpy()
-                for model_name, model in self.models_to_watch.items()
-                for name, param in model.named_parameters()
-            }
-            log_dict.update(weights)
+            self.log_weights_and_gradients()
 
         wandb.log(log_dict, step=self.step, commit=commit)
 
@@ -617,6 +611,23 @@ class NGPOccTrainer:
             )
 
         return preprocessed_images_dict
+
+    def log_weights_and_gradients(self):
+        for name, model in self.models_to_watch.items():
+            # Extract the state_dict for parameters
+            params = model.state_dict()
+            gradients = {
+                name: p.grad.clone().detach()
+                for name, p in model.named_parameters()
+                if p.grad is not None
+            }
+
+            file_path = self.log_dir / f"{name}_weights_grads_step_{self.step}.pt"
+            torch.save(
+                {"step": self.step, "params": params, "gradients": gradients}, file_path
+            )
+
+            print(f"Saved weights and gradients for model '{name}' to '{file_path}'")
 
     def log_checkpoint(self):
         checkpoints_dir = self.config.log_dir / "checkpoints"
@@ -829,7 +840,8 @@ class NGPOccTrainer:
                 self.step_check(self.step, self.config.num_log_steps)
                 or not gradient_updated
             ):
-                # Log metrics at specified intervals.
+                # Log metrics at specified intervals or if gradient was not
+                # updated because loss was 0.
                 self.log_metrics(metrics_dict, commit=False)
 
             if self.step_check(self.step, self.config.num_checkpoint_steps):
