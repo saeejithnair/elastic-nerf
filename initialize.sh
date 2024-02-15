@@ -48,8 +48,8 @@ case $HOSTNAME in
     NERFSTUDIO_CACHE_DIR="/pub2/nerf/nerfstudio"
     ;;
   banana)
-    HUGGINGFACE_CACHE_DIR="/pub2/shared/hf_cache"
-    NERFSTUDIO_CACHE_DIR="/pub2/shared/nerf/nerfstudio"
+    HUGGINGFACE_CACHE_DIR="/pub5/shared/hf_cache"
+    NERFSTUDIO_CACHE_DIR="/pub5/shared/nerf/nerfstudio"
     ;;
   matcha)
     HUGGINGFACE_CACHE_DIR="/pub4/shared/hf_cache"
