@@ -2,6 +2,7 @@
 Copyright (c) 2023 Saeejith Nair, University of Waterloo.
 Copyright (c) 2022 Ruilong Li, UC Berkeley.
 """
+
 from __future__ import annotations
 
 import functools
@@ -187,12 +188,6 @@ class ElasticMLPConfig(FlexibleInstantiateConfig):
     """Whether to include bias in linear layers."""
     bias_init: Callable = nn.init.zeros_
     """Initialization function to apply to bias."""
-    use_granular_norm: bool = False
-    """Whether to apply granular normalization to the output of each layer."""
-    granular_norm: GranularNormConfig = field(
-        default_factory=lambda: GranularNormConfig()
-    )
-    """Whether to apply granular normalization to the output of each layer."""
     # widths: NerfMLPHiddenLayers = field(default_factory=lambda: NerfMLPHiddenLayers())
     # """The number of active neurons per layer. If empty, defaults to creating an
     # MLP with `net_depth` layers` and `net_width` neurons per layer.

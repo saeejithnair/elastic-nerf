@@ -276,27 +276,27 @@ class NGPOccTrainer:
 
         # The sampling weights determine the probability of a elastic_width
         # being selected for a forward pass.
-        self.granularity_sampling_weights: torch.Tensor = (
-            self.get_granularity_sampling_weights(
+        self.elastic_width_sampling_weights: torch.Tensor = (
+            self.get_elastic_width_sampling_weights(
                 num_granularities=len(self.train_elastic_widths),
             )
         )
 
         # Keep track of how many samples we've seen for each elastic_width.
-        # Create torch tensor that maps from granularity width to tensor index.
-        # Initialize the granularity indices and sample counts
-        unique_granularities, _ = torch.sort(
+        # Create torch tensor that maps from elastic width to tensor index.
+        # Initialize the elastic width indices and sample counts
+        unique_elastic_widths, _ = torch.sort(
             torch.unique(
                 torch.cat([self.eval_elastic_widths, self.train_elastic_widths])
             )
         )
-        self.granularity_indices = unique_granularities
-        self.granularity_sample_counts = torch.zeros_like(self.granularity_indices)
+        self.elastic_width_indices = unique_elastic_widths
+        self.elastic_width_sample_counts = torch.zeros_like(self.elastic_width_indices)
         self.num_updates_skipped = {
-            int(elastic_width): 0 for elastic_width in unique_granularities
+            int(elastic_width): 0 for elastic_width in unique_elastic_widths
         }
         self.granularity_target_num_rays = {
-            int(elastic_width): 0 for elastic_width in unique_granularities
+            int(elastic_width): 0 for elastic_width in unique_elastic_widths
         }
 
         # Set up wandb
@@ -326,8 +326,8 @@ class NGPOccTrainer:
             "Dataset": self.config.dataset,
             "Hidden Dim": self.config.hidden_dim,
             "Elastic": self.config.radiance_field.use_elastic,
-            "Granular Norm": self.config.radiance_field.base.use_granular_norm,
-            "Train Granularities": self.config.num_train_widths,
+            "Granular Norm": self.config.radiance_field.base.granular_norm is not None,
+            "Train Widths": self.config.num_train_widths,
             "Sampling Strategy": self.config.sampling_strategy,
             "Num Samples": self.config.num_widths_to_sample,
         }
@@ -335,7 +335,7 @@ class NGPOccTrainer:
         self.eval_table_columns = [
             "Step",
             "Index",
-            "Granularity",
+            "Width",
             "PSNR",
             "SSIM",
             "LPIPS",
@@ -347,7 +347,7 @@ class NGPOccTrainer:
         ]
         self.eval_summary_table_columns = [
             "Step",
-            "Granularity",
+            "Width",
             "PSNR Avg",
             "SSIM Avg",
             "LPIPS Avg",
@@ -467,7 +467,7 @@ class NGPOccTrainer:
         )
         return lpips_fn, ssim_fn
 
-    def get_granularity_sampling_weights(self, num_granularities: int):
+    def get_elastic_width_sampling_weights(self, num_granularities: int):
         """Generates normalized weights for sampling widths."""
         weight_strategies = {
             "exp-optimal": lambda i: math.exp(0.1 * i),
@@ -483,15 +483,15 @@ class NGPOccTrainer:
             weights = weights.flip(0)
         return weights / weights.sum()
 
-    def update_granularity_sample_counts(self, sampled_granularities):
+    def update_elastic_width_sample_counts(self, sampled_granularities):
         for elastic_width in sampled_granularities:
-            # Find the index in granularity_indices that corresponds to elastic_width
-            index = torch.nonzero(self.granularity_indices == elastic_width).item()
-            self.granularity_sample_counts[index] += 1
+            # Find the index in elastic_width_indices that corresponds to elastic_width
+            index = torch.nonzero(self.elastic_width_indices == elastic_width).item()
+            self.elastic_width_sample_counts[index] += 1
 
-    def get_granularity_sample_counts(self, elastic_width):
-        index = torch.nonzero(self.granularity_indices == elastic_width).item()
-        return int(self.granularity_sample_counts[index])
+    def get_elastic_width_sample_counts(self, elastic_width):
+        index = torch.nonzero(self.elastic_width_indices == elastic_width).item()
+        return int(self.elastic_width_sample_counts[index])
 
     def log_metric(
         self,
@@ -526,7 +526,7 @@ class NGPOccTrainer:
                 log_dict[f"{mode}/{metric_name}/{granularity_label}"] = metric_value
 
         for elastic_width, sample_count in zip(
-            self.granularity_indices, self.granularity_sample_counts
+            self.elastic_width_indices, self.elastic_width_sample_counts
         ):
             elastic_width, sample_count = int(elastic_width), int(sample_count)
             granularity_label = f"elastic_{elastic_width}"
@@ -798,8 +798,8 @@ class NGPOccTrainer:
         index: Optional[int] = None,
     ) -> wandb.Table:
         """Log metrics and images to the wandb table."""
-        for granularity, metrics in metrics_dict.items():
-            images = images_dict[granularity] if images_dict else {}
+        for width, metrics in metrics_dict.items():
+            images = images_dict[width] if images_dict else {}
             data = []
             for col in columns:
                 col = col.lower().replace(" ", "_")
@@ -807,8 +807,8 @@ class NGPOccTrainer:
                     data.append(self.step)
                 elif col == "index":
                     data.append(index)
-                elif col == "granularity":
-                    data.append(granularity)
+                elif col == "width":
+                    data.append(width)
                 elif col in metrics:
                     data.append(metrics[col])
                 elif col in images:
@@ -872,7 +872,7 @@ class NGPOccTrainer:
     def train_granular_step(
         self, elastic_width: int, granularity_loss_weight: float
     ) -> Tuple[Optional[torch.Tensor], Dict[str, Any]]:
-        """Perform a single training step on a single granularity."""
+        """Perform a single training step on a single width."""
         if self.dataset.target_sample_batch_size > 0:
             # dynamic batch size for rays to keep sample batch size constant.
             num_rays = self.granularity_target_num_rays[elastic_width]
@@ -881,7 +881,7 @@ class NGPOccTrainer:
                 if (
                     num_rays > 0
                     and (
-                        self.get_granularity_sample_counts(elastic_width)
+                        self.get_elastic_width_sample_counts(elastic_width)
                         > self.dataset.num_dynamic_batch_warmup_steps
                     )
                 )
@@ -958,7 +958,7 @@ class NGPOccTrainer:
 
             density_sum = None
             count = 0
-            # Compute the mean density across all granular widths.
+            # Compute the mean density across all elastic widths.
             for elastic_width in granularities_to_sample:
                 density = self.radiance_field.query_density(
                     x, active_neurons=int(elastic_width)
@@ -987,7 +987,7 @@ class NGPOccTrainer:
             metrics_dict[granularity_label] = metrics
 
             if loss is None:
-                # No points were sampled for this granularity.
+                # No points were sampled for this width.
                 gradient_updated = False
                 for width in granularities_to_sample:
                     self.num_updates_skipped[int(width)] += 1
@@ -1004,7 +1004,7 @@ class NGPOccTrainer:
         self.optimizer.step()
         self.scheduler.step()
         gradient_updated = True
-        self.update_granularity_sample_counts(granularities_to_sample)
+        self.update_elastic_width_sample_counts(granularities_to_sample)
 
         return metrics_dict, gradient_updated
 
@@ -1020,12 +1020,12 @@ class NGPOccTrainer:
         num_widths_to_sample = min(
             len(self.train_elastic_widths), self.config.num_widths_to_sample
         )
-        granularity_indices = torch.multinomial(
-            self.granularity_sampling_weights,
+        elastic_width_indices = torch.multinomial(
+            self.elastic_width_sampling_weights,
             num_widths_to_sample,
             replacement=False,
         )
-        return self.train_elastic_widths[granularity_indices]
+        return self.train_elastic_widths[elastic_width_indices]
 
 
 def main(config: NGPOccTrainerConfig):

@@ -160,8 +160,8 @@ class Trainer:
 
         # The sampling weights determine the probability of a elastic_width
         # being selected for a forward pass.
-        self.granularity_sampling_weights: torch.Tensor = (
-            self.get_granularity_sampling_weights(
+        self.elastic_width_sampling_weights: torch.Tensor = (
+            self.get_elastic_width_sampling_weights(
                 num_granularities=len(self.train_elastic_widths),
             )
         )
@@ -170,7 +170,7 @@ class Trainer:
         # The keys for this should be the eval widths so that in our
         # logs, we can see for certain that the non train widths have
         # 0 samples.
-        self.granularity_sample_counts = {
+        self.elastic_width_sample_counts = {
             int(elastic_width): 0
             for elastic_width in torch.unique(
                 torch.cat([self.eval_elastic_widths, self.train_elastic_widths])
@@ -287,7 +287,7 @@ class Trainer:
         )
         return lpips_fn, ssim_fn
 
-    def get_granularity_sampling_weights(self, num_granularities: int):
+    def get_elastic_width_sampling_weights(self, num_granularities: int):
         """Generates normalized weights for sampling widths."""
         weight_strategies = {
             "exp-optimal": lambda i: math.exp(0.1 * i),
@@ -303,9 +303,9 @@ class Trainer:
             weights = weights.flip(0)
         return weights / weights.sum()
 
-    def update_granularity_sample_counts(self, sampled_granularities):
+    def update_elastic_width_sample_counts(self, sampled_granularities):
         for elastic_width in sampled_granularities:
-            self.granularity_sample_counts[int(elastic_width)] += 1
+            self.elastic_width_sample_counts[int(elastic_width)] += 1
 
     def log_metric(
         self,
@@ -339,11 +339,11 @@ class Trainer:
             for metric_name, metric_value in metrics_dict[granularity_label].items():
                 log_dict[f"{mode}/{metric_name}/{granularity_label}"] = metric_value
 
-        for elastic_width in self.granularity_sample_counts:
+        for elastic_width in self.elastic_width_sample_counts:
             granularity_label = f"elastic_{elastic_width}"
             log_dict[
                 f"{mode}/num_sampled_times/{granularity_label}"
-            ] = self.granularity_sample_counts[elastic_width]
+            ] = self.elastic_width_sample_counts[elastic_width]
             log_dict[
                 f"{mode}/num_updates_skipped/{granularity_label}"
             ] = self.num_updates_skipped[elastic_width]
@@ -764,7 +764,7 @@ class Trainer:
         self.optimizer.step()
         self.scheduler.step()
         gradient_updated = True
-        self.update_granularity_sample_counts(granularities_to_sample)
+        self.update_elastic_width_sample_counts(granularities_to_sample)
 
         del pixels, rgb, rays, render_bkgd, acc, depth, n_rendering_samples
 
@@ -782,12 +782,12 @@ class Trainer:
         num_widths_to_sample = min(
             len(self.train_elastic_widths), self.config.num_widths_to_sample
         )
-        granularity_indices = torch.multinomial(
-            self.granularity_sampling_weights,
+        elastic_width_indices = torch.multinomial(
+            self.elastic_width_sampling_weights,
             num_widths_to_sample,
             replacement=False,
         )
-        return self.train_elastic_widths[granularity_indices]
+        return self.train_elastic_widths[elastic_width_indices]
 
 
 def main(config: TrainerConfig):

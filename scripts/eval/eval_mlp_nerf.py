@@ -180,7 +180,7 @@ else:
     step = 0
 
 
-def get_granularity_sampling_weights(num_granularities: int) -> torch.Tensor:
+def get_elastic_width_sampling_weights(num_granularities: int) -> torch.Tensor:
     """Generates normalized weights for sampling widths."""
     if args.sampling_strategy == "exp-optimal":
         weights = torch.tensor([math.exp(0.1 * i) for i in range(num_granularities)])
@@ -217,7 +217,7 @@ eval_granularities = torch.tensor([2**i for i in range(args.num_eval_granulariti
 
 # The sampling weights determine the probability of a granularity
 # being selected for a forward pass.
-granularity_sampling_weights: torch.Tensor = get_granularity_sampling_weights(
+elastic_width_sampling_weights: torch.Tensor = get_elastic_width_sampling_weights(
     len(train_granularities)
 )
 
@@ -230,7 +230,9 @@ evaluate_all_granularities = False
 # The keys for this should be the eval widths so that in our
 # logs, we can see for certain that the non train widths have
 # 0 samples.
-granularity_sample_counts = {int(granularity): 0 for granularity in eval_granularities}
+elastic_width_sample_counts = {
+    int(granularity): 0 for granularity in eval_granularities
+}
 
 # training
 tic = time.time()
