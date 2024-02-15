@@ -30,10 +30,7 @@ parameters:
       - 1
       - 2
       - 3
-  radiance-field.base.use-granular-norm:
-    values:
-      - True
-      - False
+
 command:
   - python
   - scripts/train/train_elastic_ngp_occ.py
