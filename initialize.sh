@@ -41,92 +41,10 @@ WANDB_CACHE_DIR=""
 
 # Host machine setup.
 HOSTNAME=$(hostname)
-case $HOSTNAME in
-  guacamole)
-    HUGGINGFACE_CACHE_DIR="/pub4/hf_cache"
-    WANDB_CACHE_DIR="/pub2/nerf/wandb"
-    NERFSTUDIO_CACHE_DIR="/pub2/nerf/nerfstudio"
-    ;;
-  banana)
-    HUGGINGFACE_CACHE_DIR="/pub5/shared/hf_cache"
-    NERFSTUDIO_CACHE_DIR="/pub5/shared/nerf/nerfstudio"
-    ;;
-  matcha)
-    HUGGINGFACE_CACHE_DIR="/pub0/shared/hf_cache"
-    NERFSTUDIO_CACHE_DIR="/pub0/shared/nerf/nerfstudio"
-    ;;
-  lavazza)
-    HUGGINGFACE_CACHE_DIR="/pub0/shared/hf_cache"
-    NERFSTUDIO_CACHE_DIR="/pub0/shared/nerf/nerfstudio"
-    ;;
-  cheetah)
-    HUGGINGFACE_CACHE_DIR="/pub1/shared/hf_cache"
-    NERFSTUDIO_CACHE_DIR="/pub1/shared/nerf/nerfstudio"
-    ;;
-  Kiwi)
-    HUGGINGFACE_CACHE_DIR="/data/shared/hf_cache"
-    NERFSTUDIO_CACHE_DIR="/data/shared/nerf/nerfstudio"
-    ;;
-  platypus)
-    HUGGINGFACE_CACHE_DIR="/storage/disk1/shared/hf_cache"
-    NERFSTUDIO_CACHE_DIR="/storage/disk1/shared/nerf/nerfstudio"
-    ;;
-  lilac)
-    HUGGINGFACE_CACHE_DIR="/pub1/shared/hf_cache"
-    NERFSTUDIO_CACHE_DIR="/pub1/shared/nerf/nerfstudio"
-    ;;
-  Macchiato)
-    HUGGINGFACE_CACHE_DIR="/pub3/shared/hf_cache"
-    NERFSTUDIO_CACHE_DIR="/pub3/shared/nerf/nerfstudio"
-    ;;
-  lox)
-    HUGGINGFACE_CACHE_DIR="/pub2/shared/hf_cache"
-    NERFSTUDIO_CACHE_DIR="/pub2/shared/nerf/nerfstudio"
-    ;;
-  Latte)
-    HUGGINGFACE_CACHE_DIR="/pub2/shared/hf_cache"
-    NERFSTUDIO_CACHE_DIR="/pub2/shared/nerf/nerfstudio"
-    ;;
-  chai)
-    HUGGINGFACE_CACHE_DIR="/pub3/shared/hf_cache"
-    NERFSTUDIO_CACHE_DIR="/pub3/shared/nerf/nerfstudio"
-    ;;
-  citrus)
-    HUGGINGFACE_CACHE_DIR="/pub0/shared/hf_cache"
-    NERFSTUDIO_CACHE_DIR="/pub0/shared/nerf/nerfstudio"
-    ;;
-  *)
-    print_warning "Failed to set up cache directories for Nerfstudio and Huggingface." \
-         "Unrecognized hostname: $HOSTNAME."
-    read -p "Do you want to specify cache directories for this server? [Y/n]: " yn
 
-    case $yn in
-        [Yy]* )
-            read -p "Enter path to HuggingFace cache dir for $HOSTNAME: " HUGGINGFACE_CACHE_DIR
-            read -p "Enter path to Nerfstudio cache dir for $HOSTNAME: " NERFSTUDIO_CACHE_DIR
-
-            # Confirm if the user wants to save this info for the future
-            read -p "Do you want to save these directories for $HOSTNAME in the script? [Y/n]: " yn_save
-            if [[ $yn_save =~ [Yy] ]]; then
-                # Use awk to inject new server details into the script right before the first occurrence of the unsupported server branch
-                awk -v host="$HOSTNAME" -v hf="$HUGGINGFACE_CACHE_DIR" -v ns="$NERFSTUDIO_CACHE_DIR" '
-                    {
-                        if ($0 ~ /\*\)/ && !inserted) {
-                            print "  " host ")\n    HUGGINGFACE_CACHE_DIR=\"" hf "\"\n    NERFSTUDIO_CACHE_DIR=\"" ns "\"\n    ;;"
-                            inserted=1
-                        }
-                        print
-                    }
-                ' $0 > temp_script && mv temp_script $0
-            fi
-            ;;
-        [Nn]* )
-            print_error "Unable to continue setup, cache directories must be specified."
-            exit 1
-            ;;
-    esac
-    ;;
-esac
+HUGGINGFACE_CACHE_DIR="/nfs0/shared/hf_cache"
+NERFSTUDIO_CACHE_DIR="/nfs0/shared/nerf/nerfstudio"
+WANDB_CACHE_DIR="/nfs0/shared/nerf/wandb"
 
 # Check if cache directories exist, and if not, prompt the user.
 if [ ! -d "$HUGGINGFACE_CACHE_DIR" ]; then
