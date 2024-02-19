@@ -7,7 +7,7 @@ from __future__ import annotations
 
 import functools
 import math
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, fields
 from typing import Callable, Dict, Literal, Optional, Type, Union
 
 import torch
@@ -192,6 +192,33 @@ class ElasticMLPConfig(FlexibleInstantiateConfig):
     # """The number of active neurons per layer. If empty, defaults to creating an
     # MLP with `net_depth` layers` and `net_width` neurons per layer.
     # """
+
+    @staticmethod
+    def from_dict(data: dict) -> "ElasticMLPConfig":
+        cls = ElasticMLPConfig()
+        """Create a config from a dictionary."""
+        for field_info in fields(cls):
+            field_name = field_info.name
+            if field_name.startswith("_"):  # Skipping private or protected fields
+                continue
+            if field_name in data:
+                field_value = data[field_name]
+                field_type = field_info.type
+
+                if hasattr(field_type, "from_dict") and isinstance(field_value, dict):
+                    # If the field type has a 'from_dict' method and the corresponding value is a dict,
+                    # call 'from_dict' recursively
+                    setattr(cls, field_name, field_type.from_dict(field_value))
+                elif isinstance(field_value, dict) and not hasattr(
+                    field_type, "from_dict"
+                ):
+                    # If the field value is a dict and the field type does not have a 'from_dict' method,
+                    # assume it is a type where the keys are the field names and the values are the field values
+                    setattr(cls, field_name, field_type(**field_value))
+                else:
+                    # For simple types, just assign the value directly
+                    setattr(cls, field_name, field_value)
+        return cls
 
 
 class ElasticMLP(nn.Module):

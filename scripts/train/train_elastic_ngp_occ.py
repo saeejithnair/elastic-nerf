@@ -626,7 +626,6 @@ class NGPOccTrainer:
             torch.save(
                 {"step": self.step, "params": params, "gradients": gradients}, file_path
             )
-            wandb.save(str(file_path))
             print(f"Saved weights and gradients for model '{name}' to '{file_path}'")
 
     def log_checkpoint(self):
@@ -646,7 +645,6 @@ class NGPOccTrainer:
             },
             checkpoint_fp,
         )
-        wandb.save(str(checkpoint_fp))
         print(f"Saved model to {checkpoint_fp}")
 
     @torch.no_grad()
@@ -865,6 +863,7 @@ class NGPOccTrainer:
         pbar.close()
 
         # Final checkpoint logging and evaluation.
+        self.log_weights_and_gradients()
         self.log_checkpoint()
         self.eval()
         wandb.log({}, step=self.step)

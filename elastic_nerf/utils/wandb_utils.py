@@ -6,14 +6,17 @@ import os
 import pickle
 import tempfile
 import time
+from collections import defaultdict
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Tuple, Union
+from typing import Any, Callable, DefaultDict, Dict, List, Optional, Tuple, Union
 
 import gonas.utils.logging_utils as lu
 import pandas as pd
+import torch
 from tomlkit import table
+from tqdm import tqdm
 from wandb.apis.public import Api, File
 from wandb.apis.public import Run as WandbPublicRun
 from wandb.apis.public import Sweep
@@ -75,6 +78,7 @@ class RunResult:
         run: WandbPublicRun,
         download_history: bool = False,
         tables: Optional[List[str]] = None,
+        download_weights_grads: bool = False,
         cache_dir: Optional[Path] = None,
     ):
         self.run_id = run.id
@@ -94,6 +98,12 @@ class RunResult:
                         "Cache dir must be provided to download tables for a run."
                     )
                 self.tables = self.download_tables(run, tables, self.cache_dir)
+            if download_weights_grads:
+                if self.cache_dir is None:
+                    raise ValueError(
+                        "Cache dir must be provided to download weights and grads for a run."
+                    )
+                self.weights_grads = self.download_weights_grads(run, self.cache_dir)
         except Exception as e:
             lu.error(f"An error occurred while fetching run {run.id}: {e}")
             raise e
@@ -101,15 +111,26 @@ class RunResult:
     def update_missing_attributes(
         self,
         run: WandbPublicRun,
-        download_history: bool,
-        tables: Optional[List[str]] = None,
         cache_dir: Optional[Path] = None,
+        download_history: bool = False,
+        tables: Optional[List[str]] = None,
+        download_weights_grads: bool = False,
     ) -> bool:
         attributes_updated = False
         # Update history if needed
         if download_history and not hasattr(self, "history"):
             print(f"Missing attribute history for run {run.id}.")
             self.history = self.download_history(run)
+            attributes_updated = True
+
+        # Update weights and gradients if needed
+        if download_weights_grads and not hasattr(self, "weights_grads"):
+            print(f"Missing attribute weights_grads for run {run.id}.")
+            if cache_dir is None:
+                raise ValueError(
+                    "Cache dir must be provided to download weights and grads for a run."
+                )
+            self.weights_grads = self.download_weights_grads(run, cache_dir=cache_dir)
             attributes_updated = True
 
         # Update tables if needed
@@ -230,14 +251,49 @@ class RunResult:
 
         return history_df
 
+    @staticmethod
+    def download_weights_grads(
+        run: WandbPublicRun,
+        cache_dir: Path,
+        filter_fn: Optional[Callable] = lambda x: x.name.endswith(".pt")
+        and "weights_grads" in x.name,
+    ):
+        """Downloads the weights and gradients for a run."""
+        # Get all the files in the run
+        files = run.files()
+        if filter_fn is not None:
+            files = list(filter(filter_fn, files))
+
+        print(
+            f"Downloading weights and gradients for run {run.id} from {len(files)} files."
+        )
+        run_weights_grads: DefaultDict[str, Dict[int, Any]] = defaultdict(dict)
+        download_dir = cache_dir / "weights_grads"
+        for file in tqdm(files):
+            file_path = os.path.join(download_dir, file.name)
+            file.download(replace=True, root=download_dir)
+
+            filename = file.name.split(".")[0]
+            model_name, step = filename.split("_weights_grads_step_")
+            step = int(step)
+
+            loaded_dict = torch.load(file_path)
+            assert loaded_dict["step"] == step, f"Step mismatch for {file.name}."
+
+            run_weights_grads[model_name][step] = {
+                "params": loaded_dict["params"],
+                "gradients": loaded_dict["gradients"],
+            }
+
+        return run_weights_grads
+
 
 def fetch_run_result(
     run_id: str,
     project_name: str = PROJECT_NAME,
     cache: bool = True,
     refresh_cache: bool = False,
-    download_history: bool = False,
-    tables: Optional[List[str]] = None,
+    **kwargs,
 ) -> RunResult:
     """Fetch a run from W&B."""
 
@@ -255,7 +311,7 @@ def fetch_run_result(
             cached_result: RunResult = pickle.load(f)
 
         attributes_updated = cached_result.update_missing_attributes(
-            run, download_history, tables, cache_dir=run_assets_dir
+            run, cache_dir=run_assets_dir, **kwargs
         )
         if attributes_updated:
             lu.warning(f"Updated missing attributes for run {run_id}.")
@@ -266,9 +322,8 @@ def fetch_run_result(
 
     run_result = RunResult(
         run,
-        download_history=download_history,
-        tables=tables,
         cache_dir=run_assets_dir,
+        **kwargs,
     )
 
     if cache:
@@ -299,8 +354,7 @@ def fetch_sweep_results(
     sweep: Union[str, Sweep],
     cache: bool = True,
     refresh_cache: bool = False,
-    download_history: bool = False,
-    tables: Optional[List[str]] = None,
+    **kwargs,
 ) -> List[RunResult]:
     """Fetch summary data for all runs in a sweep, with optional caching."""
     if isinstance(sweep, str):
@@ -328,8 +382,7 @@ def fetch_sweep_results(
                 run.id,
                 cache=cache,
                 refresh_cache=refresh_cache,
-                download_history=download_history,
-                tables=tables,
+                **kwargs,
             )
             for run in sweep.runs
             if run.state == "finished"

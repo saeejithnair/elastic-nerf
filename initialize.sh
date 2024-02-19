@@ -37,14 +37,13 @@ PROJECT_NAME="elastic-nerf"
 host_workspace_path=""
 wandb_key=""
 hf_token=""
-WANDB_CACHE_DIR=""
+WANDB_CACHE_DIR="/nfs0/shared/nerf/wandb"
 
 # Host machine setup.
 HOSTNAME=$(hostname)
 
 HUGGINGFACE_CACHE_DIR="/nfs0/shared/hf_cache"
 NERFSTUDIO_CACHE_DIR="/nfs0/shared/nerf/nerfstudio"
-WANDB_CACHE_DIR="/nfs0/shared/nerf/wandb"
 
 # Check if cache directories exist, and if not, prompt the user.
 if [ ! -d "$HUGGINGFACE_CACHE_DIR" ]; then
