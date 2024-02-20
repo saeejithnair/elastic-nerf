@@ -69,7 +69,7 @@ echo "export OLD_PATH=$PATH" >> ${CONDA_PREFIX}/etc/conda/activate.d/env_vars.sh
 echo "export OLD_LD_LIBRARY_PATH=$LD_LIBRARY_PATH" >> ${CONDA_PREFIX}/etc/conda/activate.d/env_vars.sh
 echo "export PATH=$PATH:/usr/local/cuda-$CUDA_VERSION/bin" >> ${CONDA_PREFIX}/etc/conda/activate.d/env_vars.sh
 echo "export LD_LIBRARY_PATH=$LD_LIBRARY_PATH:/usr/local/cuda-$CUDA_VERSION/lib64" >> ${CONDA_PREFIX}/etc/conda/activate.d/env_vars.sh
-echo "export TCNN_CUDA_ARCHITECTURE=$CUDA_ARCHITECTURES" >> ${CONDA_PREFIX}/etc/conda/activate.d/env_vars.sh
+echo "export TCNN_CUDA_ARCHITECTURES=$CUDA_ARCHITECTURES" >> ${CONDA_PREFIX}/etc/conda/activate.d/env_vars.sh
 # Source the activate script immediately.
 source ${CONDA_PREFIX}/etc/conda/activate.d/env_vars.sh
 
@@ -97,7 +97,7 @@ pip install cmake lit
 pip install -r docker/deps/pip_requirements.txt
 
 # SHA corresponds to release tag v1.6 for tiny-cuda-nn.
-pip install ninja \
+TCNN_CUDA_ARCHITECTURES=$CUDA_ARCHITECTURES pip install ninja \
     git+https://github.com/NVlabs/tiny-cuda-nn/@8e6e242f36dd197134c9b9275a8e5108a8e3af78#subdirectory=bindings/torch
 
 if [ "$PYTORCH_VERSION" != "1.13.1" ]; then

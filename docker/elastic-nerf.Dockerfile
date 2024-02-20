@@ -127,7 +127,7 @@ RUN python -m pip install \
 COPY $HOST_DEPS/pip_requirements.txt $DOCKER_DEPS/pip_requirements.txt
 RUN python -m pip install -r $DOCKER_DEPS/pip_requirements.txt
 
-RUN python -m pip install \
+RUN TCNN_CUDA_ARCHITECTURES=${CUDA_ARCHITECTURES} python -m pip install \
     git+https://github.com/saeejithnair/tiny-cuda-nn/#subdirectory=bindings/torch
 
 # Install precompiled nerfacc from wheel and nerfstudio from pip.
