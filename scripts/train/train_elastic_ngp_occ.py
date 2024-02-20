@@ -613,6 +613,8 @@ class NGPOccTrainer:
 
     def log_weights_and_gradients(self):
         """Log weights and gradients for the models to WandB."""
+        checkpoints_dir = self.log_dir / "weights_grads"
+        checkpoints_dir.mkdir(exist_ok=True, parents=True)
         for name, model in self.models_to_watch.items():
             # Extract the state_dict for parameters
             params = model.state_dict()
@@ -622,7 +624,7 @@ class NGPOccTrainer:
                 if p.grad is not None
             }
 
-            file_path = self.log_dir / "weights_grads" / f"{name}_step_{self.step}.pt"
+            file_path = checkpoints_dir / f"{name}_step_{self.step}.pt"
             torch.save(
                 {"step": self.step, "params": params, "gradients": gradients}, file_path
             )
