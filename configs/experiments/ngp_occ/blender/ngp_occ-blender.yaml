@@ -23,7 +23,8 @@ parameters:
     values:
       - True
   num-train-widths:
-    value: 4
+    values:
+      - 4
   num-widths-to-sample:
     values:
       - 1
