@@ -303,6 +303,10 @@ class NGPOccTrainer:
         self.setup_wandb()
 
     def setup_wandb(self):
+        self.wandb_dir = self.config.log_dir / "wandb_sync" / self.config.exp_name
+        self.wandb_dir.mkdir(parents=True, exist_ok=True)
+        os.environ["WANDB_DIR"] = self.wandb_dir.as_posix()
+
         self.log_dir = self.config.log_dir / self.config.exp_name
         self.log_dir.mkdir(parents=True, exist_ok=True)
         config = asdict(self.config)
