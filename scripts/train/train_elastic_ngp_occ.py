@@ -622,14 +622,14 @@ class NGPOccTrainer:
                 if p.grad is not None
             }
 
-            file_path = self.log_dir / f"{name}_weights_grads_step_{self.step}.pt"
+            file_path = self.log_dir / "weights_grads" / f"{name}_step_{self.step}.pt"
             torch.save(
                 {"step": self.step, "params": params, "gradients": gradients}, file_path
             )
             print(f"Saved weights and gradients for model '{name}' to '{file_path}'")
 
     def log_checkpoint(self):
-        checkpoints_dir = self.config.log_dir / "checkpoints"
+        checkpoints_dir = self.log_dir / "checkpoints"
         checkpoints_dir.mkdir(exist_ok=True, parents=True)
         checkpoint_fp = (
             checkpoints_dir
