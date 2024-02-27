@@ -26,6 +26,7 @@ from nerfacc.estimators.occ_grid import OccGridEstimator
 from nerfstudio.configs.config_utils import convert_markup_to_ansi
 from nerfstudio.scripts.downloads.download_data import BlenderDownload
 from torchmetrics.functional import structural_similarity_index_measure
+from tyro.extras._serialization import to_yaml
 
 import wandb
 from elastic_nerf.nerfacc.datasets.nerf_360_v2 import SubjectLoader as MipNerf360Loader
@@ -41,6 +42,7 @@ from elastic_nerf.nerfacc.utils import (
     render_image_with_occgrid,
     set_random_seed,
 )
+from elastic_nerf.utils import logging_utils as lu
 
 set_random_seed(42)
 
@@ -49,11 +51,9 @@ set_random_seed(42)
 class NGPDatasetConfig(PrintableConfig):
     """Dataset/scene specific configurations."""
 
-    subject_loader: Type[Union[MipNerf360Loader, BlenderSyntheticLoader]]
-    """The subject loader."""
     data_root: Path
     """The root directory of the dataset."""
-    scene: Literal  # type: ignore
+    scene: str
     """Which scene to use."""
     init_batch_size: int = 1024
     """Initial batch size."""
@@ -105,15 +105,14 @@ class NGPDatasetConfig(PrintableConfig):
     num_dynamic_batch_warmup_steps: int = 20
     """Number of warmup steps for dynamic batch size."""
 
+    def get_dataloader(self):
+        raise NotImplementedError
+
 
 @dataclass
 class BlenderSyntheticDatasetConfig(NGPDatasetConfig):
     """Dataset/scene specific configurations for Blender Synthetic dataset."""
 
-    subject_loader: Type[BlenderSyntheticLoader] = field(
-        default_factory=lambda: BlenderSyntheticLoader
-    )
-    """The subject loader."""
     data_root: Path = field(
         default_factory=lambda: Path(os.environ["NERFSTUDIO_CACHE_DIR"])
         / "data/blender"
@@ -129,15 +128,14 @@ class BlenderSyntheticDatasetConfig(NGPDatasetConfig):
             1e-5 if self.scene in ["materials", "ficus", "drums"] else 1e-6
         )
 
+    def setup(self, **kwargs) -> BlenderSyntheticLoader:
+        return BlenderSyntheticLoader(**kwargs)
+
 
 @dataclass
 class MipNerf360DatasetConfig(NGPDatasetConfig):
     """Dataset/scene specific configurations for Mip-NeRF 360 dataset."""
 
-    subject_loader: Type[MipNerf360Loader] = field(
-        default_factory=lambda: MipNerf360Loader
-    )
-    """The subject loader."""
     data_root: Path = field(
         default_factory=lambda: Path(os.environ["NERFSTUDIO_CACHE_DIR"]) / "data/360_v2"
     )
@@ -178,6 +176,9 @@ class MipNerf360DatasetConfig(NGPDatasetConfig):
     cone_angle: float = 0.004
     """Cone angle."""
 
+    def setup(self, **kwargs) -> MipNerf360Loader:
+        return MipNerf360Loader(**kwargs)
+
 
 @dataclass
 class NGPOccTrainerConfig(InstantiateConfig):
@@ -190,8 +191,10 @@ class NGPOccTrainerConfig(InstantiateConfig):
     """The name of the experiment."""
     project_name: str = "elastic-nerf"
     """The name of the project."""
-    dataset: Literal["blender", "mipnerf360"] = "blender"
+    dataset_name: Literal["blender", "mipnerf360"] = "blender"
     """Which dataset to use."""
+    dataset: Optional[NGPDatasetConfig] = None
+    """The dataset configuration. Will be dynamically set based on the dataset_name."""
     scene: str = "lego"
     """Which scene to use."""
     model_path: Optional[Path] = None
@@ -228,12 +231,34 @@ class NGPOccTrainerConfig(InstantiateConfig):
     """The configuration for the elastic MLP."""
     device: str = "cuda:0"
     """The device to use."""
-    log_dir: Path = field(
-        default_factory=lambda: Path(os.environ["NERFSTUDIO_CACHE_DIR"]) / "wandb_cache"
-    )
+    log_dir: Optional[Path] = None
     """The directory to store the logs."""
+    wandb_dir: Optional[Path] = None
+    """The directory containing wandb cache."""
     host_machine: str = os.environ["HOSTNAME"]
     """Name of the host machine"""
+
+    def __post_init__(self):
+        if self.log_dir is None:
+            self.log_dir = (
+                Path(os.environ.get("RESULTS_CACHE_DIR", "./results"))
+                / self.project_name
+                / self.exp_name
+            )
+
+        if self.wandb_dir is None:
+            self.wandb_dir = (
+                Path(os.environ.get("WANDB_CACHE_DIR", "./wandb_cache"))
+                / self.project_name
+                / self.exp_name
+            )
+
+        if self.dataset_name == "blender":
+            self.dataset = BlenderSyntheticDatasetConfig(scene=self.scene)
+        elif self.dataset_name == "mipnerf360":
+            self.dataset = MipNerf360DatasetConfig(scene=self.scene)
+        else:
+            raise ValueError(f"Unknown dataset {self.dataset_name}")
 
 
 class NGPOccTrainer:
@@ -300,22 +325,25 @@ class NGPOccTrainer:
         }
 
         # Set up wandb
-        self.setup_wandb()
+        self.setup_logging()
 
-    def setup_wandb(self):
-        self.wandb_dir = self.config.log_dir / "wandb_sync" / self.config.exp_name
+    def setup_logging(self):
+        self.wandb_dir = self.config.wandb_dir
         self.wandb_dir.mkdir(parents=True, exist_ok=True)
         os.environ["WANDB_DIR"] = self.wandb_dir.as_posix()
 
-        self.log_dir = self.config.log_dir / self.config.exp_name
+        self.log_dir = self.config.log_dir
         self.log_dir.mkdir(parents=True, exist_ok=True)
+
+        # Save serialized config to log directory.
+        config_serialized = to_yaml(self.config)
+        with open(self.log_dir / "config.yaml", "w") as f:
+            f.write(config_serialized)
+
         config = asdict(self.config)
-        dataset_config = asdict(self.dataset)
-        dataset_config["name"] = self.config.dataset
-        config["dataset"] = dataset_config
         wandb.init(
             project=os.environ.get("WANDB_PROJECT", self.config.project_name),
-            dir=os.environ.get("WANDB_DIR", self.log_dir.as_posix()),
+            dir=self.wandb_dir.as_posix(),
             name=os.environ.get("WANDB_NAME", self.config.exp_name),
             reinit=True,
             config=config,
@@ -327,7 +355,7 @@ class NGPOccTrainer:
 
         self.exp_config_columns = {
             "Scene": self.config.scene,
-            "Dataset": self.config.dataset,
+            "Dataset": self.config.dataset_name,
             "Hidden Dim": self.config.hidden_dim,
             "Elastic": self.config.radiance_field.use_elastic,
             "Train Widths": self.config.num_train_widths,
@@ -358,16 +386,9 @@ class NGPOccTrainer:
 
     def setup_datasets(self):
         """Setup training and testing datasets."""
-        if self.config.dataset == "blender":
-            dataset = BlenderSyntheticDatasetConfig(scene=self.config.scene)
-        elif self.config.dataset == "mipnerf360":
-            dataset = MipNerf360DatasetConfig(scene=self.config.scene)
-        else:
-            raise ValueError(f"Unknown dataset {self.config.dataset}")
-
         self.dataset: Union[
             BlenderSyntheticDatasetConfig, MipNerf360DatasetConfig
-        ] = dataset
+        ] = self.config.dataset
         # Check if dataset exists at provided path.
         # If not download it to its parent.
         if not self.dataset.data_root.exists():
@@ -395,7 +416,7 @@ class NGPOccTrainer:
                     f"Unknown dataset type {type(self.dataset)} for dataset {self.dataset.data_root.as_posix()}."
                 )
 
-        train_dataset = self.dataset.subject_loader(
+        train_dataset = self.dataset.setup(
             subject_id=self.config.scene,
             root_fp=self.dataset.data_root.as_posix(),
             split=self.dataset.train_split,
@@ -403,7 +424,7 @@ class NGPOccTrainer:
             device=self.device,
             **self.dataset.train_dataset_kwargs,
         )
-        test_dataset = self.dataset.subject_loader(
+        test_dataset = self.dataset.setup(
             subject_id=self.config.scene,
             root_fp=self.dataset.data_root.as_posix(),
             split="test",
@@ -629,7 +650,7 @@ class NGPOccTrainer:
             }
 
             file_path = checkpoints_dir / f"{name}_step_{self.step}.pt"
-            torch.save(
+            lu.robust_torch_save(
                 {"step": self.step, "params": params, "gradients": gradients}, file_path
             )
             print(f"Saved weights and gradients for model '{name}' to '{file_path}'")
@@ -641,7 +662,7 @@ class NGPOccTrainer:
             checkpoints_dir
             / f"{self.config.exp_name}_{self.config.scene}_{self.step}.pt"
         )
-        torch.save(
+        lu.robust_torch_save(
             {
                 "step": self.step,
                 "radiance_field_state_dict": self.radiance_field.state_dict(),

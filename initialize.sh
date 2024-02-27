@@ -37,7 +37,8 @@ PROJECT_NAME="elastic-nerf"
 host_workspace_path=""
 wandb_key=""
 hf_token=""
-WANDB_CACHE_DIR="/nfs0/shared/nerf/wandb"
+RESULTS_CACHE_DIR="/nfs0/shared/nerf/results"
+WANDB_CACHE_DIR="/nfs0/shared/nerf/wandb_cache"
 
 # Host machine setup.
 HOSTNAME=$(hostname)
@@ -137,6 +138,7 @@ echo "TARGET_REPO_MOUNTDIR=${TARGET_REPO_MOUNTDIR}" >> ".env"
 echo "TARGET_PROJECT_DIR=${TARGET_PROJECT_DIR}" >> ".env"
 echo "HUGGINGFACE_CACHE_DIR=${HUGGINGFACE_CACHE_DIR}" >> ".env"
 echo "NERFSTUDIO_CACHE_DIR=${NERFSTUDIO_CACHE_DIR}" >> ".env"
+echo "RESULTS_CACHE_DIR=${RESULTS_CACHE_DIR}" >> ".env"
 echo "WANDB_CACHE_DIR=${WANDB_CACHE_DIR}" >> ".env"
 echo "HOSTNAME=${HOSTNAME}" >> ".env"
 

@@ -20,6 +20,7 @@ services:
         USER_HF_TOKEN: ${HF_TOKEN:-}
         TARGET_PROJECT_DIR: ${TARGET_PROJECT_DIR:?}
         NERFSTUDIO_CACHE_DIR: /home/${DOCKER_USERNAME:?}/shared/nerfstudio
+        RESULTS_CACHE_DIR: /home/${DOCKER_USERNAME:?}/shared/results
 
     image: ${USERNAME:?}/elastic-nerf
     user: ${USER_ID:?}:${GROUP_ID:?}
@@ -51,6 +52,7 @@ services:
       - ${HOST_WORKSPACE_PATH:-.}:${TARGET_REPO_MOUNTDIR:?}
       - ${HUGGINGFACE_CACHE_DIR:?}:/home/${DOCKER_USERNAME:?}/shared/hf_cache
       - ${NERFSTUDIO_CACHE_DIR:?}:/home/${DOCKER_USERNAME:?}/shared/nerfstudio
+      - ${RESULTS_CACHE_DIR:?}:/home/${DOCKER_USERNAME:?}/shared/results
       - /home/${USERNAME:?}/.ssh:/home/${DOCKER_USERNAME:?}/.ssh
       - ${WANDB_CACHE_DIR:-./cache/wandb}:/home/${DOCKER_USERNAME:?}/shared/wandb_cache
       # - /home/${USERNAME:?}/.cache:/home/${DOCKER_USERNAME:?}/.cache
@@ -69,5 +71,6 @@ services:
       - ${HOST_WORKSPACE_PATH:-.}:${TARGET_REPO_MOUNTDIR:?}
       - ${HUGGINGFACE_CACHE_DIR:?}:/home/${DOCKER_USERNAME:?}/shared/hf_cache
       - ${NERFSTUDIO_CACHE_DIR:?}:/home/${DOCKER_USERNAME:?}/shared/nerfstudio
+      - ${RESULTS_CACHE_DIR:?}:/home/${DOCKER_USERNAME:?}/shared/results
       - /home/${USERNAME:?}/.ssh:/home/${DOCKER_USERNAME:?}/.ssh
       - ${WANDB_CACHE_DIR:-./cache/wandb}:/home/${DOCKER_USERNAME:?}/shared/wandb_cache
