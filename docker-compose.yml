@@ -21,6 +21,7 @@ services:
         TARGET_PROJECT_DIR: ${TARGET_PROJECT_DIR:?}
         NERFSTUDIO_CACHE_DIR: /home/${DOCKER_USERNAME:?}/shared/nerfstudio
         RESULTS_CACHE_DIR: /home/${DOCKER_USERNAME:?}/shared/results
+        WANDB_CACHE_DIR: /home/${DOCKER_USERNAME:?}/shared/wandb_cache
 
     image: ${USERNAME:?}/elastic-nerf
     user: ${USER_ID:?}:${GROUP_ID:?}

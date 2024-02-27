@@ -166,6 +166,8 @@ ARG NERFSTUDIO_CACHE_DIR
 ENV NERFSTUDIO_CACHE_DIR $NERFSTUDIO_CACHE_DIR
 ARG RESULTS_CACHE_DIR
 ENV RESULTS_CACHE_DIR $RESULTS_CACHE_DIR
+ARG WANDB_CACHE_DIR
+ENV WANDB_CACHE_DIR $WANDB_CACHE_DIR
 
 # Initialize pre-commit hooks during build so we don't have to run this every
 # single time on container startup.

@@ -187,7 +187,13 @@ class NGPOccTrainerConfig(InstantiateConfig):
     _target: Type = field(default_factory=lambda: NGPOccTrainer)
     """The target class to instantiate."""
 
-    exp_name: str = field(default_factory=lambda: time.strftime("%Y-%m-%d-%H-%M-%S"))
+    exp_date: str = field(default_factory=lambda: time.strftime("%Y-%m-%d-%H-%M-%S"))
+    """The date of the experiment."""
+    exp_name: str = field(
+        default_factory=lambda: os.environ.get(
+            "WANDB_RUN_ID", time.strftime("%Y-%m-%d-%H-%M-%S")
+        )
+    )
     """The name of the experiment."""
     project_name: str = "elastic-nerf"
     """The name of the project."""
