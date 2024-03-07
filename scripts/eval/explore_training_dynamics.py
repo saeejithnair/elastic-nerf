@@ -16,9 +16,9 @@ from elastic_nerf.nerfacc.radiance_fields.ngp import (
 )
 
 # Add the elastic-nerf root directory to the python path
-import sys
 from pathlib import Path
 
+import sys
 sys.path.append(str(Path(__file__).resolve().parents[2]))
 from elastic_nerf.utils import dataset_utils as du
 from elastic_nerf.utils import notebook_utils as nu
@@ -193,12 +193,43 @@ log_dir = Path("/home/user/shared/results/elastic-nerf") / run_id
 wandb_dir = Path("/home/user/shared/wandb_cache/elastic-nerf") / run_id
 config = run_results["config"]
 ckpt = run_results["weights_grads"]["radiance_field"][500]
-trainer = NGPOccTrainer.load_trainer(config, ckpt, log_dir=log_dir, wandb_dir=wandb_dir)
+trainer = NGPOccTrainer.load_trainer(config, log_dir=log_dir, wandb_dir=wandb_dir)
+
 trainer.setup_logging()
+# %%
+# trainer.load_elastic_width(8)
+# trainer.eval([8])
+# # %%
+# trainer.load_elastic_width(64)
+# trainer.eval([64])
+# %%
+checkpoints = get_checkpoints(run_id, results_cache_dir)
+trainer.config.model_path = checkpoints[20000]
+trainer.load_checkpoint()
+# %%
+trainer.eval([64])
 # %%
 trainer.load_elastic_width(8)
 trainer.eval([8])
+
 # %%
-trainer.load_elastic_width(64)
-trainer.eval([64])
+trainer.load_elastic_width(12)
+trainer.eval([12])
+
+# %%
+trainer.load_elastic_width(4)
+trainer.eval([4])
+
+# %%
+trainer.load_elastic_width(7)
+trainer.eval([7])
+
+# %%
+trainer.load_elastic_width(2)
+trainer.eval([2])
+
+# %%
+trainer.load_elastic_width(37)
+trainer.eval([37])
+
 # %%

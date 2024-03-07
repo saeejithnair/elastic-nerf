@@ -749,7 +749,7 @@ class NGPOccTrainer:
 
             if i % 10 == 0:
                 preprocessed_images_dict = self.log_images(
-                    images_dict,
+                    {granularity_label: images_dict},
                     axis_value=i,
                     axis_key=f"Test Image/{granularity_label}",
                     mode="Eval Results",
@@ -758,7 +758,7 @@ class NGPOccTrainer:
                 assert preprocessed_images_dict is not None
 
             self.log_metrics(
-                metrics_dict,
+                {granularity_label: metrics_dict},
                 axis_value=i,
                 axis_key=f"Test Image/{granularity_label}",
                 mode="Eval Results",
@@ -780,9 +780,7 @@ class NGPOccTrainer:
             columns=self.eval_summary_table_columns
             + list(self.exp_config_columns.keys())
         )
-        for elastic_width in tqdm.tqdm(
-            eval_elastic_widths, desc="Test Dataset", leave=True
-        ):
+        for elastic_width in eval_elastic_widths:
             torch.cuda.empty_cache()
             psnrs, lpips, ssims = self.eval_width(int(elastic_width))
             psnrs_history.update(psnrs)
@@ -1055,23 +1053,30 @@ class NGPOccTrainer:
         )
         return self.train_elastic_widths[elastic_width_indices]
 
+    def load_weights_grads(self, weights_grads_path: Path, module_name: str):
+        ckpt = torch.load(weights_grads_path)
+        module = getattr(self, module_name)
+        module.load_state_dict(ckpt["params"])
+
+        for name, param in module.named_parameters():
+            if name in ckpt["gradients"]:
+                param.grad = ckpt["gradients"][name]
+
     @staticmethod
     def load_trainer(
-        config: str, ckpt_path: Path, log_dir: Path, wandb_dir: Path
+        config: str,
+        log_dir: Path,
+        wandb_dir: Path,
+        ckpt_path: Optional[Path] = None,
     ) -> "NGPOccTrainer":
         # Load model from config
         trainer_config: NGPOccTrainerConfig = from_yaml(NGPOccTrainerConfig, config)
         trainer_config.log_dir = log_dir
         trainer_config.wandb_dir = wandb_dir
         trainer_config.enable_logging = False
+        if ckpt_path is not None:
+            trainer_config.model_path = ckpt_path
         trainer = trainer_config.setup()
-        # Load weights from checkpoint
-        ckpt = torch.load(ckpt_path)
-        trainer.radiance_field.load_state_dict(ckpt["params"])
-
-        for name, param in trainer.radiance_field.named_parameters():
-            if name in ckpt["gradients"]:
-                param.grad = ckpt["gradients"][name]
 
         return trainer
 

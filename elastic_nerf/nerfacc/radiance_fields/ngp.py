@@ -60,9 +60,7 @@ def contract_to_unisphere(
     mask = mag.squeeze(-1) > 1
 
     if derivative:
-        dev = (2 * mag - 1) / mag**2 + 2 * x**2 * (
-            1 / mag**3 - (2 * mag - 1) / mag**4
-        )
+        dev = (2 * mag - 1) / mag**2 + 2 * x**2 * (1 / mag**3 - (2 * mag - 1) / mag**4)
         dev[~mask] = 1.0
         dev = torch.clamp(dev, min=eps)
         return dev
@@ -202,7 +200,7 @@ class NGPRadianceField(torch.nn.Module):
                 },
             )
 
-        encoding_config = {
+        self.encoding_config = {
             "otype": "HashGrid",
             "n_levels": n_levels,
             "n_features_per_level": 2,
@@ -214,14 +212,14 @@ class NGPRadianceField(torch.nn.Module):
             self.mlp_base = ElasticMLPWithInputEncoding(
                 input_dim=num_dim,
                 output_dim=1 + self.geo_feat_dim,
-                encoding_config=encoding_config,
+                encoding_config=self.encoding_config,
                 elastic_mlp=config.base,
             )
         else:
             self.mlp_base = tcnn.NetworkWithInputEncoding(
                 n_input_dims=num_dim,
                 n_output_dims=1 + self.geo_feat_dim,
-                encoding_config=encoding_config,
+                encoding_config=self.encoding_config,
                 network_config={
                     "otype": "FullyFusedMLP",
                     "activation": "ReLU",
