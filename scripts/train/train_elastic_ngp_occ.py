@@ -26,8 +26,8 @@ from nerfacc.estimators.occ_grid import OccGridEstimator
 from nerfstudio.configs.config_utils import convert_markup_to_ansi
 from nerfstudio.scripts.downloads.download_data import BlenderDownload
 from torchmetrics.functional import structural_similarity_index_measure
-from tyro.extras._serialization import to_yaml
-
+from tyro.extras._serialization import to_yaml, from_yaml
+import copy
 import wandb
 from elastic_nerf.nerfacc.datasets.nerf_360_v2 import SubjectLoader as MipNerf360Loader
 from elastic_nerf.nerfacc.datasets.nerf_synthetic import (
@@ -243,6 +243,8 @@ class NGPOccTrainerConfig(InstantiateConfig):
     """The directory containing wandb cache."""
     host_machine: str = os.environ["HOSTNAME"]
     """Name of the host machine"""
+    enable_logging: bool = True
+    """Whether to enable logging."""
 
     def __post_init__(self):
         if self.log_dir is None:
@@ -331,7 +333,8 @@ class NGPOccTrainer:
         }
 
         # Set up wandb
-        self.setup_logging()
+        if self.config.enable_logging:
+            self.setup_logging()
 
     def setup_logging(self):
         self.wandb_dir = self.config.wandb_dir
@@ -389,12 +392,13 @@ class NGPOccTrainer:
             "SSIM Avg",
             "LPIPS Avg",
         ]
+        self.start_time = time.time()
 
     def setup_datasets(self):
         """Setup training and testing datasets."""
-        self.dataset: Union[
-            BlenderSyntheticDatasetConfig, MipNerf360DatasetConfig
-        ] = self.config.dataset
+        self.dataset: Union[BlenderSyntheticDatasetConfig, MipNerf360DatasetConfig] = (
+            self.config.dataset
+        )
         # Check if dataset exists at provided path.
         # If not download it to its parent.
         if not self.dataset.data_root.exists():
@@ -561,12 +565,12 @@ class NGPOccTrainer:
             elastic_width, sample_count = int(elastic_width), int(sample_count)
             granularity_label = f"elastic_{elastic_width}"
             log_dict[f"{mode}/num_sampled_times/{granularity_label}"] = sample_count
-            log_dict[
-                f"{mode}/num_updates_skipped/{granularity_label}"
-            ] = self.num_updates_skipped[elastic_width]
-            log_dict[
-                f"{mode}/target_num_rays/{granularity_label}"
-            ] = self.granularity_target_num_rays[elastic_width]
+            log_dict[f"{mode}/num_updates_skipped/{granularity_label}"] = (
+                self.num_updates_skipped[elastic_width]
+            )
+            log_dict[f"{mode}/target_num_rays/{granularity_label}"] = (
+                self.granularity_target_num_rays[elastic_width]
+            )
 
         log_dict[f"{mode}/elapsed_time"] = elapsed_time
         if axis_key is not None:
@@ -681,118 +685,109 @@ class NGPOccTrainer:
         print(f"Saved model to {checkpoint_fp}")
 
     @torch.no_grad()
-    def eval_image(self, img_idx) -> Tuple[Dict, Dict]:
-        self.radiance_field.eval()
-        self.estimator.eval()
+    def eval_image(self, img_idx, elastic_width) -> Tuple[Dict, Dict]:
         data = self.test_dataset[img_idx]
         rays, pixels, render_bkgd = data["rays"], data["pixels"], data["color_bkgd"]
-        metrics_dict = {}
-        images_dict = {}
 
-        # Rendering for different widths.
-        for elastic_width in tqdm.tqdm(
-            self.eval_elastic_widths, desc="Granular Widths", leave=False
-        ):
-            torch.cuda.empty_cache()
-            elastic_width = int(elastic_width)
-            granularity_label = f"elastic_{elastic_width}"
-            kwargs = {}
-            if self.config.radiance_field.use_elastic:
-                kwargs["active_neurons"] = elastic_width
-            rgb, acc, depth, n_rendering_samples = render_image_with_occgrid(
-                self.radiance_field,
-                self.estimator,
-                rays,
-                # rendering options
-                near_plane=self.dataset.near_plane,
-                render_step_size=self.dataset.render_step_size,
-                render_bkgd=render_bkgd,
-                cone_angle=self.dataset.cone_angle,
-                alpha_thre=self.dataset.alpha_thre,
-                # test options
-                test_chunk_size=self.dataset.test_chunk_size,
-                **kwargs,
-            )
-            loss, mse_loss, psnr = self.compute_losses(rgb, pixels)
-            lpips = self.lpips_fn(rgb, pixels)
-            ssim = self.ssim_fn(rgb, pixels)
-            metrics_dict[granularity_label] = {
-                "loss": float(loss.item()),
-                "mse_loss": float(mse_loss.item()),
-                "psnr": float(psnr.item()),
-                "ssim": float(ssim.item()),  # type: ignore
-                "lpips": float(lpips.item()),
-                "max_depth": float(depth.max()),
-                "num_rays": int(len(pixels)),
-                "n_rendering_samples": n_rendering_samples,
-            }
-            images_dict[granularity_label] = {
-                "gt": pixels.cpu(),
-                "rgb": rgb.cpu(),
-                "acc": acc.cpu(),
-                "depth": depth.cpu(),
-                "error": (rgb - pixels).norm(dim=-1).cpu(),
-            }
+        elastic_width = int(elastic_width)
+        kwargs = {}
+        if self.config.radiance_field.use_elastic:
+            kwargs["active_neurons"] = elastic_width
+        rgb, acc, depth, n_rendering_samples = render_image_with_occgrid(
+            self.radiance_field,
+            self.estimator,
+            rays,
+            # rendering options
+            near_plane=self.dataset.near_plane,
+            render_step_size=self.dataset.render_step_size,
+            render_bkgd=render_bkgd,
+            cone_angle=self.dataset.cone_angle,
+            alpha_thre=self.dataset.alpha_thre,
+            # test options
+            test_chunk_size=self.dataset.test_chunk_size,
+            **kwargs,
+        )
+        loss, mse_loss, psnr = self.compute_losses(rgb, pixels)
+        lpips = self.lpips_fn(rgb, pixels)
+        ssim = self.ssim_fn(rgb, pixels)
+        metrics_dict = {
+            "loss": float(loss.item()),
+            "mse_loss": float(mse_loss.item()),
+            "psnr": float(psnr.item()),
+            "ssim": float(ssim.item()),  # type: ignore
+            "lpips": float(lpips.item()),
+            "max_depth": float(depth.max()),
+            "num_rays": int(len(pixels)),
+            "n_rendering_samples": n_rendering_samples,
+        }
+        images_dict = {
+            "gt": pixels.cpu(),
+            "rgb": rgb.cpu(),
+            "acc": acc.cpu(),
+            "depth": depth.cpu(),
+            "error": (rgb - pixels).norm(dim=-1).cpu(),
+        }
 
         return metrics_dict, images_dict
 
-    @torch.no_grad()
-    def eval(self):
-        psnrs_history = defaultdict(list)
-        lpips_history = defaultdict(list)
-        ssim_history = defaultdict(list)
+    def eval_width(self, elastic_width: int):
+        psnrs = defaultdict(list)
+        lpips = defaultdict(list)
+        ssims = defaultdict(list)
+        self.radiance_field.eval()
+        self.estimator.eval()
 
-        eval_table = wandb.Table(
-            columns=self.eval_table_columns + list(self.exp_config_columns.keys())
-        )
-        eval_summary_table = wandb.Table(
-            columns=self.eval_summary_table_columns
-            + list(self.exp_config_columns.keys())
-        )
         for i in tqdm.tqdm(
             range(len(self.test_dataset)), desc="Test Dataset", leave=True
         ):
-            metrics_dict, images_dict = self.eval_image(i)
+            granularity_label = f"elastic_{elastic_width}"
+            metrics_dict, images_dict = self.eval_image(i, elastic_width)
 
-            for granularity_label in metrics_dict:
-                psnrs_history[granularity_label].append(
-                    metrics_dict[granularity_label]["psnr"]
-                )
-                lpips_history[granularity_label].append(
-                    metrics_dict[granularity_label]["lpips"]
-                )
-                ssim_history[granularity_label].append(
-                    metrics_dict[granularity_label]["ssim"]
-                )
+            psnrs[granularity_label].append(metrics_dict["psnr"])
+            lpips[granularity_label].append(metrics_dict["lpips"])
+            ssims[granularity_label].append(metrics_dict["ssim"])
 
             if i % 10 == 0:
                 preprocessed_images_dict = self.log_images(
                     images_dict,
                     axis_value=i,
-                    axis_key="Test Image",
+                    axis_key=f"Test Image/{granularity_label}",
                     mode="Eval Results",
                 )
 
                 assert preprocessed_images_dict is not None
-                eval_table = self.log_to_table(
-                    metrics_dict,
-                    images_dict=preprocessed_images_dict,
-                    table=eval_table,
-                    columns=self.eval_table_columns,
-                    index=i,
-                )
+
             self.log_metrics(
                 metrics_dict,
                 axis_value=i,
-                axis_key="Test Image",
+                axis_key=f"Test Image/{granularity_label}",
                 mode="Eval Results",
                 commit=False,
             )
-        wandb.log(
-            {f"Eval Results/table": eval_table},
-            step=self.step,
-            commit=False,
+
+        return psnrs, lpips, ssims
+
+    @torch.no_grad()
+    def eval(self, eval_elastic_widths=None):
+        psnrs_history = {}
+        lpips_history = {}
+        ssim_history = {}
+
+        if eval_elastic_widths is None:
+            eval_elastic_widths = self.eval_elastic_widths
+
+        eval_summary_table = wandb.Table(
+            columns=self.eval_summary_table_columns
+            + list(self.exp_config_columns.keys())
         )
+        for elastic_width in tqdm.tqdm(
+            eval_elastic_widths, desc="Test Dataset", leave=True
+        ):
+            torch.cuda.empty_cache()
+            psnrs, lpips, ssims = self.eval_width(int(elastic_width))
+            psnrs_history.update(psnrs)
+            lpips_history.update(lpips)
+            ssim_history.update(ssims)
 
         avg_metrics_dict = {}
         for granularity_label in psnrs_history:
@@ -802,6 +797,8 @@ class NGPOccTrainer:
                 "ssim_avg": np.mean(ssim_history[granularity_label]),
             }
 
+        print("Eval Results Summary")
+        print(avg_metrics_dict)
         eval_summary_table = self.log_to_table(
             avg_metrics_dict,
             eval_summary_table,
@@ -859,7 +856,6 @@ class NGPOccTrainer:
 
     def train(self):
         """Train the model."""
-        self.start_time = time.time()
         pbar = tqdm.tqdm(
             total=self.config.max_steps + 1, desc="Training Steps", leave=True
         )
@@ -1058,6 +1054,42 @@ class NGPOccTrainer:
             replacement=False,
         )
         return self.train_elastic_widths[elastic_width_indices]
+
+    @staticmethod
+    def load_trainer(
+        config: str, ckpt_path: Path, log_dir: Path, wandb_dir: Path
+    ) -> "NGPOccTrainer":
+        # Load model from config
+        trainer_config: NGPOccTrainerConfig = from_yaml(NGPOccTrainerConfig, config)
+        trainer_config.log_dir = log_dir
+        trainer_config.wandb_dir = wandb_dir
+        trainer_config.enable_logging = False
+        trainer = trainer_config.setup()
+        # Load weights from checkpoint
+        ckpt = torch.load(ckpt_path)
+        trainer.radiance_field.load_state_dict(ckpt["params"])
+
+        for name, param in trainer.radiance_field.named_parameters():
+            if name in ckpt["gradients"]:
+                param.grad = ckpt["gradients"][name]
+
+        return trainer
+
+    def load_elastic_width(self, elastic_width: int):
+        """Load the model with the specified elastic width."""
+        if not hasattr(self, "full_width_radiance_field"):
+            self.full_width_radiance_field = copy.deepcopy(
+                self.radiance_field.to(torch.device("cpu"))
+            )
+
+        new_width_elastic_net = (
+            self.full_width_radiance_field.mlp_base.elastic_mlp.get_sliced_net(
+                elastic_width
+            )
+        )
+        self.radiance_field.mlp_base.elastic_mlp = new_width_elastic_net
+
+        self.radiance_field.to(self.device)
 
 
 def main(config: NGPOccTrainerConfig):

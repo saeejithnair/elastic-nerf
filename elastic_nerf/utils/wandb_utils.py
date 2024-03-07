@@ -11,6 +11,7 @@ from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Callable, DefaultDict, Dict, List, Optional, Tuple, Union
+import datetime
 
 import gonas.utils.logging_utils as lu
 import pandas as pd
@@ -27,8 +28,8 @@ from wandb.sdk.wandb_run import Run as WandbInternalRun
 
 import wandb
 
-CACHE_DIR: str = "/home/user/shared/wandb_cache"
 PROJECT: str = "elastic-nerf"
+CACHE_DIR: str = f"/home/user/shared/results/{PROJECT}"
 ENTITY: str = "saeejithn"
 PROJECT_NAME: str = f"{ENTITY}/{PROJECT}"
 
@@ -76,16 +77,24 @@ class RunResult:
     def __init__(
         self,
         run: WandbPublicRun,
+        results_cache_dir: Path,
+        wandb_cache_dir: Path,
         download_history: bool = False,
         tables: Optional[List[str]] = None,
-        download_weights_grads: bool = False,
-        cache_dir: Optional[Path] = None,
+        get_weights_grads: bool = False,
     ):
         self.run_id = run.id
-        if cache_dir is not None:
-            cache_dir.mkdir(parents=True, exist_ok=True)
+        self.run_name = run.name
+        self.run_date = run.created_at
+        if wandb_cache_dir is not None:
+            wandb_cache_dir.mkdir(parents=True, exist_ok=True)
 
-        self.cache_dir = cache_dir
+        self.wandb_cache_dir = wandb_cache_dir
+        self.results_cache_dir: Path = results_cache_dir/f"{run.id}"
+        # if (self.results_cache_dir/"config.yaml").exists():
+        #     with open(os.path.join(self.results_cache_dir, "config.yaml"), "r") as f:
+        #         # I'm confused :(
+
         try:
             self.config = run.config
             self.state = run.state
@@ -93,20 +102,52 @@ class RunResult:
                 self.history = self.download_history(run)
             self.summary = self.download_summary(run)
             if tables is not None:
-                if self.cache_dir is None:
+                if self.wandb_cache_dir is None:
                     raise ValueError(
                         "Cache dir must be provided to download tables for a run."
                     )
-                self.tables = self.download_tables(run, tables, self.cache_dir)
-            if download_weights_grads:
-                if self.cache_dir is None:
+                self.tables = self.download_tables(run, tables, self.wandb_cache_dir)
+            if get_weights_grads:
+                if self.wandb_cache_dir is None:
                     raise ValueError(
                         "Cache dir must be provided to download weights and grads for a run."
                     )
-                self.weights_grads = self.download_weights_grads(run, self.cache_dir)
+                self.weights_grads = self.add_weights_grad(run, self.wandb_cache_dir)
+            self.checkpoints = self.add_checkpoint(run, self.wandb_cache_dir)
         except Exception as e:
             lu.error(f"An error occurred while fetching run {run.id}: {e}")
             raise e
+    
+    def add_weights_grad(self, result_dir, run_id):
+        directory = os.path.join(result_dir, run_id, "weights_grads")
+        # assume result_dir is /shared/results/elastic-nerf
+        file_paths = glob.glob(f"{directory}/*.pt")
+
+        weights_grads = {}
+        for file in file_paths:
+            filename = os.path.basename(file)
+            # example name: radiance_field_step_1000.pt
+            split_filename = filename.split("_step_")
+            model_name = split_filename[0]
+            step = int(split_filename[1].split(".")[0])
+            weights_grads[model_name] = {step: os.path.join(run_id, "weights_grads", filename)}
+        # TODO: change it to return relative starting from /results/elastic-nerf
+            # results_dir has all things saved during training, maybe we should download to it too
+            # cache_dir should have run results after it gets pickled
+            # everything should be relative to results_dir
+
+    def add_checkpoint(self, result_dir, run_id):
+        directory = os.path.join(result_dir, run_id, "checkpoints")
+        file_paths = glob.glob(f"{directory}/*.pt")
+
+        checkpoints = {}
+        for file in file_paths:
+            filename = os.path.basename(file)
+            # example name: 0tlyjl6x_ship_20000.pt
+            split_filename = filename.split("_")
+            run_id = split_filename[0]
+            step = int(split_filename[2].split(".")[0])
+            checkpoints[run_id] = {step: os.path.join(run_id, "checkpoints", filename)}
 
     def update_missing_attributes(
         self,
@@ -130,7 +171,7 @@ class RunResult:
                 raise ValueError(
                     "Cache dir must be provided to download weights and grads for a run."
                 )
-            self.weights_grads = self.download_weights_grads(run, cache_dir=cache_dir)
+            self.weights_grads = self.add_weights_grad(cache_dir, run)
             attributes_updated = True
 
         # Update tables if needed
@@ -251,41 +292,41 @@ class RunResult:
 
         return history_df
 
-    @staticmethod
-    def download_weights_grads(
-        run: WandbPublicRun,
-        cache_dir: Path,
-        filter_fn: Optional[Callable] = lambda x: x.name.endswith(".pt")
-        and "weights_grads" in x.name,
-    ):
-        """Downloads the weights and gradients for a run."""
-        # Get all the files in the run
-        files = run.files()
-        if filter_fn is not None:
-            files = list(filter(filter_fn, files))
+    # @staticmethod
+    # def download_weights_grads(
+    #     run: WandbPublicRun,
+    #     cache_dir: Path,
+    #     filter_fn: Optional[Callable] = lambda x: x.name.endswith(".pt")
+    #     and "weights_grads" in x.name,
+    # ):
+    #     """Downloads the weights and gradients for a run."""
+    #     # Get all the files in the run
+    #     files = run.files()
+    #     if filter_fn is not None:
+    #         files = list(filter(filter_fn, files))
 
-        print(
-            f"Downloading weights and gradients for run {run.id} from {len(files)} files."
-        )
-        run_weights_grads: DefaultDict[str, Dict[int, Any]] = defaultdict(dict)
-        download_dir = cache_dir / "weights_grads"
-        for file in tqdm(files):
-            file_path = os.path.join(download_dir, file.name)
-            file.download(replace=True, root=download_dir)
+    #     print(
+    #         f"Downloading weights and gradients for run {run.id} from {len(files)} files."
+    #     )
+    #     run_weights_grads: DefaultDict[str, Dict[int, Any]] = defaultdict(dict)
+    #     download_dir = cache_dir / "weights_grads"
+    #     for file in tqdm(files):
+    #         file_path = os.path.join(download_dir, file.name)
+    #         file.download(replace=True, root=download_dir)
 
-            filename = file.name.split(".")[0]
-            model_name, step = filename.split("_weights_grads_step_")
-            step = int(step)
+    #         filename = file.name.split(".")[0]
+    #         model_name, step = filename.split("_weights_grads_step_")
+    #         step = int(step)
 
-            loaded_dict = torch.load(file_path)
-            assert loaded_dict["step"] == step, f"Step mismatch for {file.name}."
+    #         loaded_dict = torch.load(file_path)
+    #         assert loaded_dict["step"] == step, f"Step mismatch for {file.name}."
 
-            run_weights_grads[model_name][step] = {
-                "params": loaded_dict["params"],
-                "gradients": loaded_dict["gradients"],
-            }
+    #         run_weights_grads[model_name][step] = {
+    #             "params": loaded_dict["params"],
+    #             "gradients": loaded_dict["gradients"],
+    #         }
 
-        return run_weights_grads
+    #     return run_weights_grads
 
 
 def fetch_run_result(
@@ -322,7 +363,7 @@ def fetch_run_result(
 
     run_result = RunResult(
         run,
-        cache_dir=run_assets_dir,
+        wandb_cache_dir=run_assets_dir,
         **kwargs,
     )
 

@@ -6,7 +6,6 @@ evaluate
 ipywidgets
 jupyterlab
 jupyterlab-quarto
-keras_retinanet
 lightning
 lovely-tensors
 lpips

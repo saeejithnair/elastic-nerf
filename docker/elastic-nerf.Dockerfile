@@ -1,7 +1,9 @@
 ## -----------------------------------------
 ## Stage 1: Base dependencies installation.
 ## -----------------------------------------
-FROM nvidia/cuda:11.7.1-devel-ubuntu22.04 as base
+ARG OS_VERSION=22.04
+ARG CUDA_VERSION=11.8.0
+FROM nvidia/cuda:${CUDA_VERSION}-devel-ubuntu${OS_VERSION} as base
 
 ENV DEBIAN_FRONTEND noninteractive
 # Set timezone as it is required by some packages.
@@ -26,15 +28,6 @@ RUN apt-get -y update && \
 # Add deadsnakes PPA
 RUN add-apt-repository -y ppa:deadsnakes/ppa && \
     apt-get -y update
-
-# Install Python and related packages
-RUN apt-get -y install --no-install-recommends \
-    python3.9 \
-    python3.9-dev \
-    python3.9-distutils \
-    python3.9-venv \
-    python3-pip \
-    python-is-python3
 
 # Copy apt dependencies file
 COPY $HOST_DEPS/apt_requirements.txt $DOCKER_DEPS/apt_requirements.txt
@@ -102,37 +95,39 @@ SHELL ["/bin/bash", "-c"]
 ## -----------------------------------------
 FROM setup AS app
 
-# CUDA architecture, required by tiny-cuda-nn.
-ARG CUDA_ARCHITECTURES=86
 # Virtual environment path.
 ENV VIRTUAL_ENV="$USER_HOME/venv"
 ENV PATH="$VIRTUAL_ENV/bin:$PATH"
-# Set the target architectures as env var for tiny-cuda-nn.
-ENV TCNN_CUDA_ARCHITECTURES=${CUDA_ARCHITECTURES}
 
-# Install python dependencies.
-RUN python3.9 -m venv $VIRTUAL_ENV
+# Upgrade pip and install packages.
+RUN python3.10 -m venv $VIRTUAL_ENV
+RUN python3.10 -m pip install --no-cache-dir --upgrade \
+    pip setuptools pathtools promise pybind11
 
-# RUN python -m pip install \
-#     torch==1.13.1+cu117 \
-#     torchvision==0.14.1+cu117 \
-#     torchaudio==0.13.1 \
-#     --extra-index-url https://download.pytorch.org/whl/cu117
-RUN python -m pip install \
-    torch==2.0.1+cu117 \
-    torchvision==0.15.2+cu117 \
-    torchaudio==2.0.2 \
-    --extra-index-url https://download.pytorch.org/whl/cu117
+# Install pytorch and submodules
+RUN export CUDA_VER=$(echo ${CUDA_VERSION%.*} | tr -d '.') && \
+    python3.10 -m pip install --no-cache-dir \
+    torch==2.0.1+cu${CUDA_VER} \
+    torchvision==0.15.2+cu${CUDA_VER} \
+        --extra-index-url https://download.pytorch.org/whl/cu${CUDA_VER}
 
 COPY $HOST_DEPS/pip_requirements.txt $DOCKER_DEPS/pip_requirements.txt
-RUN python -m pip install -r $DOCKER_DEPS/pip_requirements.txt
+RUN python3.10 -m pip install --no-cache-dir -r $DOCKER_DEPS/pip_requirements.txt
 
-RUN TCNN_CUDA_ARCHITECTURES=${CUDA_ARCHITECTURES} python -m pip install \
-    git+https://github.com/saeejithnair/tiny-cuda-nn/#subdirectory=bindings/torch
+# Install tynyCUDNN (we need to set the target architectures as environment variable first).
+# CUDA architecture, required by tiny-cuda-nn.
+ARG CUDA_ARCHITECTURES
+# COPY $HOST_DEPS/detect_cuda_arch.sh $DOCKER_DEPS/detect_cuda_arch.sh
+# RUN chmod +x $DOCKER_DEPS/detect_cuda_arch.sh
+# RUN export $($DOCKER_DEPS/detect_cuda_arch.sh) && \
+#     echo "Using CUDA Architecture: $TCNN_CUDA_ARCHITECTURES"
+
+ENV TCNN_CUDA_ARCHITECTURES=${CUDA_ARCHITECTURES}
+RUN python3.10 -m pip install --no-cache-dir git+https://github.com/NVlabs/tiny-cuda-nn.git@v1.6#subdirectory=bindings/torch
 
 # Install precompiled nerfacc from wheel and nerfstudio from pip.
-RUN python -m pip install nerfacc==0.5.2 -f https://nerfacc-bucket.s3.us-west-2.amazonaws.com/whl/torch-2.0.0_cu117/nerfacc-0.5.2%2Bpt20cu117-cp39-cp39-linux_x86_64.whl
-RUN python -m pip install nerfstudio==0.3.4
+RUN python3.10 -m pip install --no-cache-dir nerfacc==0.5.2 -f https://nerfacc-bucket.s3.us-west-2.amazonaws.com/whl/torch-2.0.0_cu118/nerfacc-0.5.2%2Bpt20cu118-cp310-cp310-linux_x86_64.whl
+RUN python3.10 -m pip install --no-cache-dir nerfstudio==0.3.4
 
 ## -----------------------------------------
 ## Stage 4: Runtime setup.
