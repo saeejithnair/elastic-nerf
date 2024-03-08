@@ -6,14 +6,14 @@ description: This performs a sweep over blender dataset with full size nerfacc a
 parameters:
   scene:
     values:
-      - chair
       - drums
+      - ship
       - ficus
+      - chair
       - hotdog
       - lego
       - materials
       - mic
-      - ship
   sampling-strategy:
     values:
       - uniform
