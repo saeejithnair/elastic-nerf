@@ -983,8 +983,7 @@ class NGPOccTrainer:
         """Perform a single training step."""
         self.radiance_field.train()
         self.estimator.train()
-        granularities_to_sample = self.sample_granularities()
-        granularity_loss_weight = 1 / len(granularities_to_sample)
+        granularities_to_sample, granularity_loss_weight = self.sample_granularities()
 
         def occ_eval_fn(x):
             if not self.config.radiance_field.use_elastic:
@@ -1055,7 +1054,11 @@ class NGPOccTrainer:
         if self.config.sampling_strategy == "sequential":
             # Sequentially sample the widths at each step.
             sampling_idx = self.step % len(self.train_elastic_widths)
-            return self.train_elastic_widths[sampling_idx]
+            granularity_loss_weight = 1
+            return (
+                torch.tensor([self.train_elastic_widths[sampling_idx]]),
+                granularity_loss_weight,
+            )
 
         assert self.elastic_width_sampling_weights is not None, (
             "Elastic width sampling weights must be provided "
@@ -1069,7 +1072,10 @@ class NGPOccTrainer:
             num_widths_to_sample,
             replacement=False,
         )
-        return self.train_elastic_widths[elastic_width_indices]
+        granularities_to_sample = self.train_elastic_widths[elastic_width_indices]
+        granularity_loss_weight = 1 / len(granularities_to_sample)
+
+        return granularities_to_sample, granularity_loss_weight
 
     def load_weights_grads(self, weights_grads_path: Path, module_name: str):
         ckpt = torch.load(weights_grads_path)
