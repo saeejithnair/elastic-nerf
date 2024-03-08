@@ -213,6 +213,7 @@ class NGPOccTrainerConfig(InstantiateConfig):
         "exp-reverse",
         "matroyshka",
         "matroyshka-reverse",
+        "sequential",
     ] = "exp-reverse"
     """Sampling strategy for widths."""
     hidden_dim: int = 64
@@ -309,10 +310,14 @@ class NGPOccTrainer:
 
         # The sampling weights determine the probability of a elastic_width
         # being selected for a forward pass.
-        self.elastic_width_sampling_weights: torch.Tensor = (
-            self.get_elastic_width_sampling_weights(
-                num_granularities=len(self.train_elastic_widths),
+        self.elastic_width_sampling_weights: Optional[torch.Tensor] = (
+            (
+                self.get_elastic_width_sampling_weights(
+                    num_granularities=len(self.train_elastic_widths),
+                )
             )
+            if self.config.sampling_strategy != "sequential"
+            else None
         )
 
         # Keep track of how many samples we've seen for each elastic_width.
@@ -1047,6 +1052,15 @@ class NGPOccTrainer:
 
     def sample_granularities(self):
         """Sample widths for training."""
+        if self.config.sampling_strategy == "sequential":
+            # Sequentially sample the widths at each step.
+            sampling_idx = self.step % len(self.train_elastic_widths)
+            return self.train_elastic_widths[sampling_idx]
+
+        assert self.elastic_width_sampling_weights is not None, (
+            "Elastic width sampling weights must be provided "
+            "for non-sequential sampling strategies."
+        )
         num_widths_to_sample = min(
             len(self.train_elastic_widths), self.config.num_widths_to_sample
         )
