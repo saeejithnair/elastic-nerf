@@ -854,6 +854,10 @@ class NGPOccTrainer:
 
     def train(self):
         """Train the model."""
+        # Log initial weights and gradients.
+        self.log_weights_and_gradients()
+        self.log_checkpoint()
+
         pbar = tqdm.tqdm(
             total=self.config.max_steps + 1, desc="Training Steps", leave=True
         )
