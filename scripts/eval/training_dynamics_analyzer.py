@@ -35,7 +35,6 @@ class TrainingDynamicsAnalyzer:
         self.training_steps = []
         self.norm_types = {
             "L1": 1,
-            "L2": 2,
             "Frobenius": "fro",
             "Spectral (max)": "spectral_max",
             "Spectral (min)": "spectral_min",
