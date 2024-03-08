@@ -14,6 +14,7 @@ import matplotlib.colors as mcolors
 from matplotlib.colors import LogNorm, Normalize, BoundaryNorm
 from matplotlib import colormaps as colormaps
 from matplotlib.colors import ListedColormap
+from elastic_nerf.utils import wandb_utils as wu
 
 sys.path.append(str(Path(__file__).resolve().parents[2]))
 
@@ -27,6 +28,7 @@ class TrainingDynamicsAnalyzer:
         model: ElasticMLP,
         run_id: str,
         config: NGPOccTrainerConfig,
+        sweep_id: str,
         width_step: int = 1,
     ):
         self.max_width = max_width
@@ -39,9 +41,11 @@ class TrainingDynamicsAnalyzer:
             "Spectral (min)": "spectral_min",
         }
         self.run_id = run_id
+        self.sweep_id = sweep_id
         self.config = config
-        self.output_dir = Path(
-            "/home/user/workspace/elastic-nerf/generated/training_dynamics"
+        self.output_dir = (
+            Path("/home/user/workspace/elastic-nerf/generated/training_dynamics")
+            / sweep_id
         )
         if not self.output_dir.exists():
             self.output_dir.mkdir(parents=True, exist_ok=True)
@@ -231,44 +235,46 @@ def get_config(run_id: str, results_dir: Path):
 
 
 # %%
-# run_id = "z0bejqau"
-# run_id = "gnatcn6w"
-# run_id = "qx56molz"
-run_id = "v7kztsvf"
-log_dir = Path("/home/user/shared/results/elastic-nerf") / run_id
-wandb_dir = Path("/home/user/shared/wandb_cache/elastic-nerf") / run_id
-results_cache_dir = Path("/home/user/shared/results/elastic-nerf")
+def main():
+    sweep_id = "6b4xxk3c"
+    sweep = wu.fetch_sweep(sweep_id)
+    for run in sweep.runs:
+        run_id = run.id
+        log_dir = Path("/home/user/shared/results/elastic-nerf") / run_id
+        wandb_dir = Path("/home/user/shared/wandb_cache/elastic-nerf") / run_id
+        results_cache_dir = Path("/home/user/shared/results/elastic-nerf")
 
-run_results = {}
-run_results["checkpoints"] = get_checkpoints(run_id, results_cache_dir)
-run_results["config"] = get_config(run_id, results_cache_dir)
-run_results["weights_grads"] = get_weights_grads(run_id, results_cache_dir)
+        run_results = {}
+        run_results["checkpoints"] = get_checkpoints(run_id, results_cache_dir)
+        run_results["config"] = get_config(run_id, results_cache_dir)
+        run_results["weights_grads"] = get_weights_grads(run_id, results_cache_dir)
 
-results_dict = {}
-config = run_results["config"]
-trainer = NGPOccTrainer.load_trainer(
-    config,
-    log_dir=log_dir,
-    wandb_dir=wandb_dir,
-    ckpt_path=run_results["checkpoints"][20000],
-)
-# %%
-tda = TrainingDynamicsAnalyzer(
-    max_width=64,
-    model=trainer.radiance_field.mlp_base.elastic_mlp,
-    run_id=run_id,
-    config=trainer.config,
-)
-module_name = "radiance_field"
-steps = sorted(list(run_results["weights_grads"][module_name]))
-for step in tqdm(steps):
-    ckpt = run_results["weights_grads"][module_name][step]
-    trainer.load_weights_grads(ckpt, module_name)
-    tda.compute_and_store_norms(trainer.radiance_field.mlp_base.elastic_mlp, step)
-# %%
-tda.plot_norms(figsize_scales=(10, 5), param_type="weights")
+        config = run_results["config"]
+        trainer = NGPOccTrainer.load_trainer(
+            config,
+            log_dir=log_dir,
+            wandb_dir=wandb_dir,
+            ckpt_path=run_results["checkpoints"][20000],
+        )
+        tda = TrainingDynamicsAnalyzer(
+            max_width=64,
+            model=trainer.radiance_field.mlp_base.elastic_mlp,
+            run_id=run_id,
+            config=trainer.config,
+            sweep_id=sweep_id,
+        )
+        module_name = "radiance_field"
+        steps = sorted(list(run_results["weights_grads"][module_name]))
+        for step in tqdm(steps):
+            ckpt = run_results["weights_grads"][module_name][step]
+            trainer.load_weights_grads(ckpt, module_name)
+            tda.compute_and_store_norms(
+                trainer.radiance_field.mlp_base.elastic_mlp, step
+            )
+        tda.plot_norms(figsize_scales=(10, 5), param_type="weights")
+        tda.plot_norms(figsize_scales=(10, 5), param_type="grads")
+
 
 # %%
-tda.plot_norms(figsize_scales=(10, 5), param_type="grads")
-
-# %%
+if __name__ == "__main__":
+    main()
