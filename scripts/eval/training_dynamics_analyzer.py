@@ -239,6 +239,7 @@ def main():
     sweep_id = "6b4xxk3c"
     sweep = wu.fetch_sweep(sweep_id)
     for run in sweep.runs:
+        print(f"Processing run {run.id}")
         run_id = run.id
         log_dir = Path("/home/user/shared/results/elastic-nerf") / run_id
         wandb_dir = Path("/home/user/shared/wandb_cache/elastic-nerf") / run_id
