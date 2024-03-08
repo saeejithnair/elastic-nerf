@@ -179,10 +179,10 @@ class TrainingDynamicsAnalyzer:
                 cb.ax.minorticks_off()
 
                 axes[i][j].set_title(
-                    f"{self.norm_types[norm_type]} Norm vs. Steps for {param_type.capitalize()}: {param_name}"
+                    f"{norm_type} Norm vs. Steps for {param_type.capitalize()}: {param_name}"
                 )
                 axes[i][j].set_xlabel("Training Step")
-                axes[i][j].set_ylabel(f"{self.norm_types[norm_type]} Norm")
+                axes[i][j].set_ylabel(f"{norm_type} Norm")
 
             # Which config parameters do we care about? Scene, # Samples, Sampling method
             fig.suptitle(
