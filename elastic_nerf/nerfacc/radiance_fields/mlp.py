@@ -438,15 +438,15 @@ class ElasticMLP(nn.Module):
                 custom_state_dict[name] = param
 
         return custom_state_dict
-    
+
     def get_sliced_net(self, new_net_width: int):
         """
-        Generates a new ElasticMLP instance with the specified net_width size, 
+        Generates a new ElasticMLP instance with the specified net_width size,
         using the sliced weights and biases from the original model's elastic state dict.
-        
+
         Args:
         new_net_width (int): The width for the new MLP layers.
-        
+
         Returns:
         ElasticMLP: A new ElasticMLP instance with adjusted layer sizes.
         """
@@ -464,15 +464,15 @@ class ElasticMLP(nn.Module):
             output_activation=self.output_activation,
             bias_enabled=self.bias_enabled,
             bias_init=self.bias_init,
-            granular_norm=self.granular_norm
+            granular_norm=self.granular_norm,
         )
-        
+
         # Use the existing state_dict method to get the elastic state dict for the new_net_width
         elastic_state_dict = self.state_dict(active_neurons=new_net_width)
-        
+
         # Load the elastic state dict into the new model
         new_model.load_state_dict(elastic_state_dict)
-        
+
         return new_model
 
 

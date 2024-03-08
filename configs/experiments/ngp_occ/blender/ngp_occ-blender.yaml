@@ -30,6 +30,9 @@ parameters:
       - 1
       - 2
       - 3
+  radiance-field.base.bias-enabled:
+    values:
+      - False
 
 command:
   - python

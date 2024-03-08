@@ -24,6 +24,9 @@ parameters:
   radiance-field.use-elastic:
     values:
       - False
+  radiance-field.base.bias-enabled:
+    values:
+      - False
 command:
   - python
   - scripts/train/train_elastic_ngp_occ.py
