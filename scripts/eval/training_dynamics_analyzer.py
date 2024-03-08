@@ -152,6 +152,7 @@ class TrainingDynamicsAnalyzer:
             nrows,
             ncols,
             figsize=(figsize_scales[0] * ncols, figsize_scales[1] * nrows),
+            layout="constrained",
         )
 
         for j, (param_name, norm_types) in enumerate(norms_dict.items()):
@@ -194,7 +195,6 @@ class TrainingDynamicsAnalyzer:
             fig.suptitle(
                 f"Training Dynamics for Run {self.run_id} | Scene: {self.config.scene.capitalize()} | # Samples: {self.config.num_widths_to_sample} | Sampling Strategy: {self.config.sampling_strategy.capitalize()}"
             )
-            fig.tight_layout()
             fig.savefig(
                 self.output_dir / f"{self.run_id}_{param_type}_norms.jpg", dpi=300
             )
