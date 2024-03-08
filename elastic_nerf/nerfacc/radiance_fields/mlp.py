@@ -113,32 +113,35 @@ class MLP(nn.Module):
 
 
 def slice_weights_and_biases_from_linear_layer(
-    weight: torch.Tensor,
-    bias: torch.Tensor,
+    layer,
     active_neurons: int,
     input_dim: int,
     first_layer: bool = False,
     skip_layer: bool = False,
     output_layer: bool = False,
 ):
+    weight = layer.weight
+    bias = layer.bias
     active_neuron_indices = torch.arange(active_neurons, device=weight.device)
     if first_layer:
         W = weight[active_neuron_indices, :]
-        b = bias[active_neuron_indices]
+        b = bias[active_neuron_indices] if bias is not None else None
     elif skip_layer:
         W = weight[active_neuron_indices, : input_dim + active_neurons]
-        b = bias[active_neuron_indices]
+        b = bias[active_neuron_indices] if bias is not None else None
     elif output_layer:
         W = weight[:, active_neuron_indices]
-        b = bias
+        b = bias if bias is not None else None
     else:
         W = weight[:active_neurons, active_neuron_indices]
-        b = bias[active_neuron_indices]
+        b = bias[active_neuron_indices] if bias is not None else None
     return W, b
 
 
 def linear_layer_muladd_act(x, W, b, activation):
-    x = torch.matmul(x, W.t()) + b
+    x = torch.matmul(x, W.t())
+    if b is not None:
+        x += b
 
     if activation is not None:
         x = activation(x)
@@ -147,7 +150,9 @@ def linear_layer_muladd_act(x, W, b, activation):
 
 
 def linear_layer_muladd_granularnorm_act(x, W, b, granular_norm, activation):
-    x = torch.matmul(x, W.t()) + b
+    x = torch.matmul(x, W.t())
+    if b is not None:
+        x += b
     x = granular_norm(x)
 
     if activation is not None:
@@ -326,8 +331,7 @@ class ElasticMLP(nn.Module):
 
         for i, layer in enumerate(self.hidden_layers):
             W, b = slice_weights_and_biases_from_linear_layer(
-                layer.weight,
-                layer.bias,
+                layer,
                 active_neurons,
                 input_dim,
                 first_layer=first_layer,
@@ -364,8 +368,7 @@ class ElasticMLP(nn.Module):
 
         if self.output_enabled:
             W_out, b = slice_weights_and_biases_from_linear_layer(
-                self.output_layer.weight,
-                self.output_layer.bias,
+                self.output_layer,
                 active_neurons,
                 self.input_dim,
                 first_layer=False,
@@ -385,8 +388,7 @@ class ElasticMLP(nn.Module):
         for i, layer in enumerate(self.hidden_layers):
             # layer_weight = hidden_layers_state_dict[f"{i}.weight"]
             W, b = slice_weights_and_biases_from_linear_layer(
-                layer.weight,
-                layer.bias,
+                layer,
                 active_neurons,
                 self.input_dim,
                 first_layer,
@@ -398,7 +400,8 @@ class ElasticMLP(nn.Module):
                 skip_layer = True
 
             granular_hidden_layers_state_dict[f"{i}.weight"] = W
-            granular_hidden_layers_state_dict[f"{i}.bias"] = b
+            if b is not None:
+                granular_hidden_layers_state_dict[f"{i}.bias"] = b
 
         return granular_hidden_layers_state_dict
 
