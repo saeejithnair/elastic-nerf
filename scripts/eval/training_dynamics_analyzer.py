@@ -15,6 +15,7 @@ from matplotlib.colors import LogNorm, Normalize, BoundaryNorm
 from matplotlib import colormaps as colormaps
 from matplotlib.colors import ListedColormap
 from elastic_nerf.utils import wandb_utils as wu
+import tyro
 
 sys.path.append(str(Path(__file__).resolve().parents[2]))
 
@@ -234,8 +235,7 @@ def get_config(run_id: str, results_dir: Path):
 
 
 # %%
-def main():
-    sweep_id = "6b4xxk3c"
+def main(sweep_id: str):
     sweep = wu.fetch_sweep(sweep_id)
     for run in sweep.runs:
         print(f"Processing run {run.id}")
@@ -277,4 +277,5 @@ def main():
 
 # %%
 if __name__ == "__main__":
-    main()
+    tyro.extras.set_accent_color("bright_yellow")
+    tyro.cli(main)
