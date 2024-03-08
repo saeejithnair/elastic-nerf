@@ -88,6 +88,8 @@ class TrainingDynamicsAnalyzer:
         gradients = {}
         for name, p in model.named_parameters():
             if name in sliced_state_dict:
+                if p.grad is None:
+                    continue
                 grad = p.grad.clone().detach().cpu()
                 weight = sliced_state_dict[name]
                 if grad.ndim == 1:
@@ -109,9 +111,7 @@ class TrainingDynamicsAnalyzer:
                     # Compute 1D norms for all widths
                     param = state_dict.get(param_name)
                     if param is None:
-                        raise ValueError(
-                            f"Parameter {param_name} not found in state dict"
-                        )
+                        continue
                     if param.ndim == 1:
                         param = param.unsqueeze(-1)
                     norm_value = self.compute_norm(param, norm_type)
@@ -126,13 +126,16 @@ class TrainingDynamicsAnalyzer:
         sliced_weight_state_dicts = [
             model.state_dict(active_neurons=width) for width in self.widths
         ]
-        sliced_grad_state_dicts = [
-            self.compute_gradients(model, state_dict)
-            for state_dict in sliced_weight_state_dicts
-        ]
-
         self.compute_norms_from_state_dict(sliced_weight_state_dicts, self.weight_norms)
-        self.compute_norms_from_state_dict(sliced_grad_state_dicts, self.grad_norms)
+
+        if step > 0:
+            # Gradient is not available for step 0 (before training has started).
+            sliced_grad_state_dicts = [
+                self.compute_gradients(model, state_dict)
+                for state_dict in sliced_weight_state_dicts
+            ]
+
+            self.compute_norms_from_state_dict(sliced_grad_state_dicts, self.grad_norms)
 
     def plot_norms(
         self, figsize_scales=(8, 5), param_type: Literal["weights", "grads"] = "weights"
@@ -141,6 +144,10 @@ class TrainingDynamicsAnalyzer:
         nrows = len(self.norm_types)
         ncols = len(norms_dict)
         buckets = np.array([0, 1, 2, 4, 8, 16, 32, 64])
+        # Gradient is not available for step 0 (before training has started)
+        training_steps = (
+            self.training_steps[1:] if param_type == "grads" else self.training_steps
+        )
         fig, axes = plt.subplots(
             nrows,
             ncols,
@@ -149,6 +156,7 @@ class TrainingDynamicsAnalyzer:
 
         for j, (param_name, norm_types) in enumerate(norms_dict.items()):
             for i, (norm_type, norm_data) in enumerate(norm_types.items()):
+                ax = axes[i] if ncols == 1 else axes[i][j]
                 norms_1D = np.array(
                     norm_data["1D"]
                 )  # Convert list of lists to a 2D array
@@ -163,9 +171,7 @@ class TrainingDynamicsAnalyzer:
                     # color = self.get_color_for_width(
                     #     self.widths[width_idx], buckets, cmap_name
                     # )
-                    axes[i][j].plot(
-                        self.training_steps, norms_1D[:, width_idx], color=color
-                    )
+                    ax.plot(training_steps, norms_1D[:, width_idx], color=color)
 
                 # Create a colorbar with the correct scale
                 sm = cm.ScalarMappable(cmap=self.cmap, norm=norm)
@@ -174,15 +180,15 @@ class TrainingDynamicsAnalyzer:
                     sm,
                     ticks=buckets,
                     format="%.0f",
-                    ax=axes[i][j],
+                    ax=ax,
                 )
                 cb.ax.minorticks_off()
 
-                axes[i][j].set_title(
+                ax.set_title(
                     f"{norm_type} Norm vs. Steps for {param_type.capitalize()}: {param_name}"
                 )
-                axes[i][j].set_xlabel("Training Step")
-                axes[i][j].set_ylabel(f"{norm_type} Norm")
+                ax.set_xlabel("Training Step")
+                ax.set_ylabel(f"{norm_type} Norm")
 
             # Which config parameters do we care about? Scene, # Samples, Sampling method
             fig.suptitle(

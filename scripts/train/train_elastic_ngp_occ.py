@@ -338,8 +338,7 @@ class NGPOccTrainer:
         }
 
         # Set up wandb
-        if self.config.enable_logging:
-            self.setup_logging()
+        self.setup_logging()
 
     def setup_logging(self):
         self.wandb_dir = self.config.wandb_dir
@@ -355,12 +354,14 @@ class NGPOccTrainer:
             f.write(config_serialized)
 
         config = asdict(self.config)
+        mode = "disabled" if not self.config.enable_logging else None
         wandb.init(
             project=os.environ.get("WANDB_PROJECT", self.config.project_name),
             dir=self.wandb_dir.as_posix(),
             name=os.environ.get("WANDB_NAME", self.config.exp_name),
             reinit=True,
             config=config,
+            mode=mode,
         )
         self.models_to_watch = {
             "radiance_field": self.radiance_field,
