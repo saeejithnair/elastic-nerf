@@ -1,0 +1,36 @@
+name: ngp_occ-blender-sequential
+project: elastic-nerf
+entity: saeejithn
+method: grid
+description: This performs a sweep over blender dataset with nerfacc accelerated ngp occ model, sampling sequentially.
+parameters:
+  scene:
+    values:
+      - drums
+      - ship
+      - ficus
+      - chair
+      - hotdog
+      - lego
+      - materials
+      - mic
+  sampling-strategy:
+    values:
+      - sequential
+  radiance-field.use-elastic:
+    values:
+      - True
+  num-train-widths:
+    values:
+      - 4
+  num-widths-to-sample:
+    values:
+      - 1
+  radiance-field.base.bias-enabled:
+    values:
+      - False
+
+command:
+  - python
+  - scripts/train/train_elastic_ngp_occ.py
+  - ${args}
