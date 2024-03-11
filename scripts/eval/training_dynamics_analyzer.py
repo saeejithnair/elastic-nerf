@@ -1,10 +1,12 @@
 # %%
 from collections import defaultdict
+from re import sub
 import torch
 import matplotlib.pyplot as plt
 import numpy as np
 from typing import Dict, List, Literal, Optional, Union
 import torch.nn as nn
+from vine import transform
 from elastic_nerf.nerfacc.radiance_fields.mlp import ElasticMLP
 from pathlib import Path
 import sys
@@ -217,6 +219,7 @@ class SweepDynamicsPlotter:
         self.buckets = np.array([0, 1, 2, 4, 8, 16, 32, 64])
         self.norm = BoundaryNorm(self.buckets, len(self.buckets))
         self.configs = []
+        self.run_summaries = []
         self.output_dir = (
             Path("/home/user/workspace/elastic-nerf/generated/training_dynamics")
             / sweep_id
@@ -225,6 +228,7 @@ class SweepDynamicsPlotter:
             self.output_dir.mkdir(parents=True, exist_ok=True)
 
         for run in self.sweep.runs:
+            self.run_summaries.append(wu.RunResult.download_summary(run))
             self.compute_training_dynamics(run.id)
             print(f"Computed training dynamics for run {run.id}")
 
@@ -323,57 +327,76 @@ class SweepDynamicsPlotter:
                     grad_norms[param_name][norm_type]["1D"]
                 )
 
-    def plot_sweep_dynamics(self, figsize_scales=(8, 5), param_type="weights"):
-        nrows = len(self.run_ids)
+    def plot_sweep_dynamics(
+        self,
+        figsize_scales=(8, 5),
+        param_type="weights",
+        offset=0.05,
+        num_runs_to_plot: Optional[int] = None,
+    ):
+        nrows = (
+            min(len(self.run_ids), num_runs_to_plot)
+            if num_runs_to_plot
+            else len(self.run_ids)
+        )
         for param_name in self.sweep_results:
             ncols = len(self.sweep_results[param_name][param_type])
-            fig, axes = plt.subplots(
-                nrows,
-                ncols,
-                figsize=(figsize_scales[0] * ncols, figsize_scales[1] * nrows),
-                layout="constrained",
-                squeeze=True,
+            # Increase figure height to account for row titles
+            fig_height = figsize_scales[1] * nrows + offset * nrows
+            fig = plt.figure(
+                constrained_layout=True,
+                figsize=(figsize_scales[0] * ncols, fig_height),
             )
-            for i, run_id in enumerate(self.run_ids):
-                for j, (norm_type, norms) in enumerate(
-                    self.sweep_results[param_name][param_type].items()
-                ):
-                    if nrows == 1:
-                        ax = axes[j]
-                    else:
-                        ax = axes[i] if ncols == 1 else axes[i][j]
-                    norms_1D = np.array(norms[i])
+            fig.suptitle(
+                f"Training Dynamics for Sweep {self.sweep_id}",
+                fontsize="large",
+                weight="bold",
+                color="blue",
+            )
+            subfigs = fig.subfigures(nrows=nrows, ncols=1)
+            for row, subfig in enumerate(subfigs):
+                run_id = self.run_ids[row]
+                summary = self.run_summaries[row]
+                widths = [64, 32, 16, 8]
+                keys = [f"Eval Results Summary/psnr_avg/elastic_{i}" for i in widths]
+                metrics = [summary.get(key) for key in keys]
+                row_title = f"Run {run_id} | Scene: {self.configs[row].scene.capitalize()} | # Samples: {self.configs[row].num_widths_to_sample} | Sampling Strategy: {self.configs[row].sampling_strategy.capitalize()}"
+                row_title += (
+                    " | Results: ("
+                    + ", ".join([f"$\\mathbf{{{m:.3f}}}$" for m in metrics])
+                    + ") PSNR for Widths ("
+                    + ", ".join([str(w) for w in widths])
+                    + ")"
+                )
+                subfig.suptitle(row_title, color="blue")
+
+                axs = subfig.subplots(nrows=1, ncols=ncols)
+                norm_types = list(self.sweep_results[param_name][param_type].keys())
+                for col, ax in enumerate(axs):
+                    norm_type = norm_types[col]
+                    norms = self.sweep_results[param_name][param_type][norm_type]
+                    norms_1D = np.array(norms[row])
+                    training_steps = (
+                        self.training_steps[row][1:]
+                        if param_type == "grads"
+                        else self.training_steps[row]
+                    )
                     for width_idx in range(norms_1D.shape[1]):
                         color = self.cmap(self.norm(width_idx))
-                        ax.plot(
-                            self.training_steps[i], norms_1D[:, width_idx], color=color
-                        )
+                        ax.plot(training_steps, norms_1D[:, width_idx], color=color)
 
-                    # Create a colorbar with the correct scale
-                    sm = cm.ScalarMappable(cmap=self.cmap, norm=self.norm)
-                    sm.set_array([])
                     cb = plt.colorbar(
-                        sm,
+                        cm.ScalarMappable(cmap=self.cmap, norm=self.norm),
                         ticks=self.buckets,
                         format="%.0f",
                         ax=ax,
                     )
                     cb.ax.minorticks_off()
-
                     ax.set_title(
-                        f"{norm_type} Norm vs. Steps for {param_type.capitalize()}: {param_name}"
+                        f"{norm_type} Norm vs. Steps for {param_name}: {param_type.capitalize()}"
                     )
                     ax.set_xlabel("Training Step")
                     ax.set_ylabel(f"{norm_type} Norm")
-                    row_title = f"Training Dynamics for Run {run_id} | Scene: {self.configs[i].scene.capitalize()} | # Samples: {self.configs[i].num_widths_to_sample} | Sampling Strategy: {self.configs[i].sampling_strategy.capitalize()}"
-                    fig.text(
-                        0.5,
-                        ax.get_position().y1 + 0.2,
-                        row_title,
-                        ha="center",
-                        fontsize="large",
-                        weight="bold",
-                    )
             fig.savefig(
                 self.output_dir / f"{param_type}_{param_name}_norms.jpg", dpi=300
             )
@@ -393,3 +416,5 @@ def main(sweep_id: str):
 if __name__ == "__main__":
     tyro.extras.set_accent_color("bright_yellow")
     tyro.cli(main)
+
+# %%
