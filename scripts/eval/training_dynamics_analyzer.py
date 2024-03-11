@@ -227,7 +227,6 @@ class SweepDynamicsPlotter:
         for run in self.sweep.runs:
             self.compute_training_dynamics(run.id)
             print(f"Computed training dynamics for run {run.id}")
-            break
 
     def get_checkpoints(self, run_id: str, results_dir: Path):
         ckpt_dir = results_dir / run_id / "checkpoints"
