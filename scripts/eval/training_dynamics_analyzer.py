@@ -360,12 +360,15 @@ class SweepDynamicsPlotter:
                 widths = [64, 32, 16, 8]
                 keys = [f"Eval Results Summary/psnr_avg/elastic_{i}" for i in widths]
                 metrics = [summary.get(key) for key in keys]
+                filtered_metrics = [
+                    (w, m) for w, m in zip(widths, metrics) if m is not None
+                ]
                 row_title = f"Run {run_id} | Scene: {self.configs[row].scene.capitalize()} | # Samples: {self.configs[row].num_widths_to_sample} | Sampling Strategy: {self.configs[row].sampling_strategy.capitalize()}"
                 row_title += (
                     " | Results: ("
-                    + ", ".join([f"$\\mathbf{{{m:.3f}}}$" for m in metrics])
+                    + ", ".join([f"$\\mathbf{{{m:.3f}}}$" for _, m in filtered_metrics])
                     + ") PSNR for Widths ("
-                    + ", ".join([str(w) for w in widths])
+                    + ", ".join([str(w) for w, _ in filtered_metrics])
                     + ")"
                 )
                 subfig.suptitle(row_title, color="blue")
