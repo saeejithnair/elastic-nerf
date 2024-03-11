@@ -201,73 +201,97 @@ class TrainingDynamicsAnalyzer:
 
 
 # %%
-def get_checkpoints(run_id: str, results_dir: Path):
-    ckpt_dir = results_dir / run_id / "checkpoints"
-    ckpt_files = list(ckpt_dir.glob("*.pt"))
-    # Parse checkpoint files based on the step number.
-    # E.g. "0tlyjl6x_ship_10000.pt" -> 10000
-    ckpt_steps = [int(f.stem.split("_")[-1]) for f in ckpt_files]
-    # Create a dictionary of step -> checkpoint file
-    ckpt_dict = dict(zip(ckpt_steps, ckpt_files))
+class SweepDynamicsPlotter:
+    def __init__(self, sweep_id, log_dir, wandb_dir, results_cache_dir):
+        self.sweep_id = sweep_id
+        self.sweep = wu.fetch_sweep(sweep_id)
+        self.log_dir = log_dir
+        self.wandb_dir = wandb_dir
+        self.results_cache_dir = results_cache_dir
+        self.run_ids = []
+        self.sweep_results = {}
+        self.training_steps = []
+        set3_cmap = plt.get_cmap("Set2")
+        colors = [set3_cmap(i) for i in range(7)]
+        self.cmap = ListedColormap(colors)
+        self.buckets = np.array([0, 1, 2, 4, 8, 16, 32, 64])
+        self.norm = BoundaryNorm(self.buckets, len(self.buckets))
+        self.configs = []
+        self.output_dir = (
+            Path("/home/user/workspace/elastic-nerf/generated/training_dynamics")
+            / sweep_id
+        )
+        if not self.output_dir.exists():
+            self.output_dir.mkdir(parents=True, exist_ok=True)
 
-    return ckpt_dict
+        for run in self.sweep.runs:
+            self.compute_training_dynamics(run.id)
+            print(f"Computed training dynamics for run {run.id}")
+            break
 
+    def get_checkpoints(self, run_id: str, results_dir: Path):
+        ckpt_dir = results_dir / run_id / "checkpoints"
+        ckpt_files = list(ckpt_dir.glob("*.pt"))
+        # Parse checkpoint files based on the step number.
+        # E.g. "0tlyjl6x_ship_10000.pt" -> 10000
+        ckpt_steps = [int(f.stem.split("_")[-1]) for f in ckpt_files]
+        # Create a dictionary of step -> checkpoint file
+        ckpt_dict = dict(zip(ckpt_steps, ckpt_files))
 
-def get_weights_grads(run_id: str, results_dir: Path):
-    weights_grads_dir = results_dir / run_id / "weights_grads"
-    weights_grads_files = list(weights_grads_dir.glob("*.pt"))
-    # Parse weights_grads files based on the step number and model.
-    # E.g. "radiance_field_step_10500.pt" -> ('radiance_field', 10500)
-    weights_grads_info = []
-    for f in weights_grads_files:
-        model, step = f.stem.split("_step_")
-        step = int(step)
-        weights_grads_info.append((model, step))
+        return ckpt_dict
 
-    # Create a dictionary of {model: {step -> weights_grads file}}
-    weights_grads_dict = defaultdict(dict)
-    for i, (model, step) in enumerate(weights_grads_info):
-        weights_grads_dict[model][step] = weights_grads_files[i]
+    def get_weights_grads(self, run_id: str, results_dir: Path):
+        weights_grads_dir = results_dir / run_id / "weights_grads"
+        weights_grads_files = list(weights_grads_dir.glob("*.pt"))
+        # Parse weights_grads files based on the step number and model.
+        # E.g. "radiance_field_step_10500.pt" -> ('radiance_field', 10500)
+        weights_grads_info = []
+        for f in weights_grads_files:
+            model, step = f.stem.split("_step_")
+            step = int(step)
+            weights_grads_info.append((model, step))
 
-    return weights_grads_dict
+        # Create a dictionary of {model: {step -> weights_grads file}}
+        weights_grads_dict = defaultdict(dict)
+        for i, (model, step) in enumerate(weights_grads_info):
+            weights_grads_dict[model][step] = weights_grads_files[i]
 
+        return weights_grads_dict
 
-def get_config(run_id: str, results_dir: Path):
-    config_file = results_dir / run_id / "config.yaml"
-    # Load yaml file from string
-    with open(config_file, "r") as file:
-        yaml_string = file.read()
-    return yaml_string
+    def get_config(self, run_id: str, results_dir: Path):
+        config_file = results_dir / run_id / "config.yaml"
+        # Load yaml file from string
+        with open(config_file, "r") as file:
+            yaml_string = file.read()
+        return yaml_string
 
+    def create_trainer(self, run_id):
+        logged_results = {}
+        logged_results["checkpoints"] = self.get_checkpoints(
+            run_id, self.results_cache_dir
+        )
+        logged_results["config"] = self.get_config(run_id, self.results_cache_dir)
+        logged_results["weights_grads"] = self.get_weights_grads(
+            run_id, self.results_cache_dir
+        )
 
-# %%
-def main(sweep_id: str):
-    sweep = wu.fetch_sweep(sweep_id)
-    for run in sweep.runs:
-        print(f"Processing run {run.id}")
-        run_id = run.id
-        log_dir = Path("/home/user/shared/results/elastic-nerf") / run_id
-        wandb_dir = Path("/home/user/shared/wandb_cache/elastic-nerf") / run_id
-        results_cache_dir = Path("/home/user/shared/results/elastic-nerf")
-
-        run_results = {}
-        run_results["checkpoints"] = get_checkpoints(run_id, results_cache_dir)
-        run_results["config"] = get_config(run_id, results_cache_dir)
-        run_results["weights_grads"] = get_weights_grads(run_id, results_cache_dir)
-
-        config = run_results["config"]
+        config = logged_results["config"]
         trainer = NGPOccTrainer.load_trainer(
             config,
-            log_dir=log_dir,
-            wandb_dir=wandb_dir,
-            ckpt_path=run_results["checkpoints"][20000],
+            log_dir=self.log_dir,
+            wandb_dir=self.wandb_dir,
+            ckpt_path=logged_results["checkpoints"][20000],
         )
+        return trainer, logged_results
+
+    def compute_training_dynamics(self, run_id):
+        trainer, run_results = self.create_trainer(run_id)
         tda = TrainingDynamicsAnalyzer(
             max_width=64,
             model=trainer.radiance_field.mlp_base.elastic_mlp,
             run_id=run_id,
             config=trainer.config,
-            sweep_id=sweep_id,
+            sweep_id=self.sweep_id,
         )
         module_name = "radiance_field"
         steps = sorted(list(run_results["weights_grads"][module_name]))
@@ -277,8 +301,93 @@ def main(sweep_id: str):
             tda.compute_and_store_norms(
                 trainer.radiance_field.mlp_base.elastic_mlp, step
             )
-        tda.plot_norms(figsize_scales=(10, 5), param_type="weights")
-        tda.plot_norms(figsize_scales=(10, 5), param_type="grads")
+
+        self.run_ids.append(run_id)
+        weight_norms = tda.weight_norms
+        grad_norms = tda.grad_norms
+        self.training_steps.append(tda.training_steps)
+        self.configs.append(tda.config)
+        for param_name in weight_norms:
+            if param_name not in self.sweep_results:
+                self.sweep_results[param_name] = {"weights": {}, "grads": {}}
+            for norm_type in weight_norms[param_name]:
+                if norm_type not in self.sweep_results[param_name]["weights"]:
+                    self.sweep_results[param_name]["weights"][norm_type] = []
+                self.sweep_results[param_name]["weights"][norm_type].append(
+                    weight_norms[param_name][norm_type]["1D"]
+                )
+        for param_name in grad_norms:
+            for norm_type in grad_norms[param_name]:
+                if norm_type not in self.sweep_results[param_name]["grads"]:
+                    self.sweep_results[param_name]["grads"][norm_type] = []
+                self.sweep_results[param_name]["grads"][norm_type].append(
+                    grad_norms[param_name][norm_type]["1D"]
+                )
+
+    def plot_sweep_dynamics(self, figsize_scales=(8, 5), param_type="weights"):
+        nrows = len(self.run_ids)
+        for param_name in self.sweep_results:
+            ncols = len(self.sweep_results[param_name][param_type])
+            fig, axes = plt.subplots(
+                nrows,
+                ncols,
+                figsize=(figsize_scales[0] * ncols, figsize_scales[1] * nrows),
+                layout="constrained",
+                squeeze=True,
+            )
+            for i, run_id in enumerate(self.run_ids):
+                for j, (norm_type, norms) in enumerate(
+                    self.sweep_results[param_name][param_type].items()
+                ):
+                    if nrows == 1:
+                        ax = axes[j]
+                    else:
+                        ax = axes[i] if ncols == 1 else axes[i][j]
+                    norms_1D = np.array(norms[i])
+                    for width_idx in range(norms_1D.shape[1]):
+                        color = self.cmap(self.norm(width_idx))
+                        ax.plot(
+                            self.training_steps[i], norms_1D[:, width_idx], color=color
+                        )
+
+                    # Create a colorbar with the correct scale
+                    sm = cm.ScalarMappable(cmap=self.cmap, norm=self.norm)
+                    sm.set_array([])
+                    cb = plt.colorbar(
+                        sm,
+                        ticks=self.buckets,
+                        format="%.0f",
+                        ax=ax,
+                    )
+                    cb.ax.minorticks_off()
+
+                    ax.set_title(
+                        f"{norm_type} Norm vs. Steps for {param_type.capitalize()}: {param_name}"
+                    )
+                    ax.set_xlabel("Training Step")
+                    ax.set_ylabel(f"{norm_type} Norm")
+                    row_title = f"Training Dynamics for Run {run_id} | Scene: {self.configs[i].scene.capitalize()} | # Samples: {self.configs[i].num_widths_to_sample} | Sampling Strategy: {self.configs[i].sampling_strategy.capitalize()}"
+                    fig.text(
+                        0.5,
+                        ax.get_position().y1 + 0.2,
+                        row_title,
+                        ha="center",
+                        fontsize="large",
+                        weight="bold",
+                    )
+            fig.savefig(
+                self.output_dir / f"{param_type}_{param_name}_norms.jpg", dpi=300
+            )
+
+
+# %%
+def main(sweep_id: str):
+    log_dir = Path("/home/user/shared/results/elastic-nerf")
+    wandb_dir = Path("/home/user/shared/wandb_cache/elastic-nerf")
+    results_cache_dir = Path("/home/user/shared/results/elastic-nerf")
+    sdp = SweepDynamicsPlotter(sweep_id, log_dir, wandb_dir, results_cache_dir)
+    sdp.plot_sweep_dynamics(figsize_scales=(8, 5), param_type="weights")
+    sdp.plot_sweep_dynamics(figsize_scales=(8, 5), param_type="grads")
 
 
 # %%
