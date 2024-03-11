@@ -232,6 +232,10 @@ class SweepDynamicsPlotter:
             self.compute_training_dynamics(run.id)
             print(f"Computed training dynamics for run {run.id}")
 
+        # Compute indices of the sorted run IDs based on scene name
+        scene_names = [config.scene for config in self.configs]
+        self.sorted_run_indices = np.argsort(scene_names)
+
     def get_checkpoints(self, run_id: str, results_dir: Path):
         ckpt_dir = results_dir / run_id / "checkpoints"
         ckpt_files = list(ckpt_dir.glob("*.pt"))
@@ -355,15 +359,16 @@ class SweepDynamicsPlotter:
             )
             subfigs = fig.subfigures(nrows=nrows, ncols=1)
             for row, subfig in enumerate(subfigs):
-                run_id = self.run_ids[row]
-                summary = self.run_summaries[row]
+                run_idx = self.sorted_run_indices[row]
+                run_id = self.run_ids[run_idx]
+                summary = self.run_summaries[run_idx]
                 widths = [64, 32, 16, 8]
                 keys = [f"Eval Results Summary/psnr_avg/elastic_{i}" for i in widths]
                 metrics = [summary.get(key) for key in keys]
                 filtered_metrics = [
                     (w, m) for w, m in zip(widths, metrics) if m is not None
                 ]
-                row_title = f"Run {run_id} | Scene: {self.configs[row].scene.capitalize()} | # Samples: {self.configs[row].num_widths_to_sample} | Sampling Strategy: {self.configs[row].sampling_strategy.capitalize()}"
+                row_title = f"Run {run_id} | Scene: {self.configs[run_idx].scene.capitalize()} | # Samples: {self.configs[run_idx].num_widths_to_sample} | Sampling Strategy: {self.configs[run_idx].sampling_strategy.capitalize()}"
                 row_title += (
                     " | Results: ("
                     + ", ".join([f"$\\mathbf{{{m:.3f}}}$" for _, m in filtered_metrics])
@@ -378,11 +383,11 @@ class SweepDynamicsPlotter:
                 for col, ax in enumerate(axs):
                     norm_type = norm_types[col]
                     norms = self.sweep_results[param_name][param_type][norm_type]
-                    norms_1D = np.array(norms[row])
+                    norms_1D = np.array(norms[run_idx])
                     training_steps = (
-                        self.training_steps[row][1:]
+                        self.training_steps[run_idx][1:]
                         if param_type == "grads"
-                        else self.training_steps[row]
+                        else self.training_steps[run_idx]
                     )
                     for width_idx in range(norms_1D.shape[1]):
                         color = self.cmap(self.norm(width_idx))
