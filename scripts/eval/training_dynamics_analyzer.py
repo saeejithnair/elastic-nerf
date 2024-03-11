@@ -406,7 +406,9 @@ class SweepDynamicsPlotter:
                     ax.set_xlabel("Training Step")
                     ax.set_ylabel(f"{norm_type} Norm")
             fig.savefig(
-                self.output_dir / f"{param_type}_{param_name}_norms.jpg", dpi=300
+                self.output_dir
+                / f"{self.sweep_id}_{param_type}_{param_name}_norms.pdf",
+                dpi=300,
             )
 
 
