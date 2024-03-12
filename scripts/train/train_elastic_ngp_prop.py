@@ -187,10 +187,10 @@ class MipNerf360DatasetConfig(NGPPropDatasetConfig):
 
 
 @dataclass
-class NGPOccTrainerConfig(InstantiateConfig):
+class NGPPropTrainerConfig(InstantiateConfig):
     """Configurations for training the model."""
 
-    _target: Type = field(default_factory=lambda: NGPOccTrainer)
+    _target: Type = field(default_factory=lambda: NGPPropTrainer)
     """The target class to instantiate."""
 
     exp_name: str = field(default_factory=lambda: time.strftime("%Y-%m-%d-%H-%M-%S"))
@@ -248,8 +248,8 @@ class NGPOccTrainerConfig(InstantiateConfig):
     """Name of the host machine"""
 
 
-class NGPOccTrainer:
-    def __init__(self, config: NGPOccTrainerConfig):
+class NGPPropTrainer:
+    def __init__(self, config: NGPPropTrainerConfig):
         self.config = config
         self.device = torch.device(config.device)
 
@@ -408,9 +408,9 @@ class NGPOccTrainer:
         else:
             raise ValueError(f"Unknown dataset {self.config.dataset}")
 
-        self.dataset: Union[
-            BlenderSyntheticDatasetConfig, MipNerf360DatasetConfig
-        ] = dataset
+        self.dataset: Union[BlenderSyntheticDatasetConfig, MipNerf360DatasetConfig] = (
+            dataset
+        )
         # Check if dataset exists at provided path.
         # If not download it to its parent.
         if not self.dataset.data_root.exists():
@@ -577,12 +577,12 @@ class NGPOccTrainer:
             elastic_width, sample_count = int(elastic_width), int(sample_count)
             granularity_label = f"elastic_{elastic_width}"
             log_dict[f"{mode}/num_sampled_times/{granularity_label}"] = sample_count
-            log_dict[
-                f"{mode}/num_updates_skipped/{granularity_label}"
-            ] = self.num_updates_skipped[elastic_width]
-            log_dict[
-                f"{mode}/target_num_rays/{granularity_label}"
-            ] = self.granularity_target_num_rays[elastic_width]
+            log_dict[f"{mode}/num_updates_skipped/{granularity_label}"] = (
+                self.num_updates_skipped[elastic_width]
+            )
+            log_dict[f"{mode}/target_num_rays/{granularity_label}"] = (
+                self.granularity_target_num_rays[elastic_width]
+            )
 
         log_dict[f"{mode}/elapsed_time"] = elapsed_time
         if axis_key is not None:
@@ -1036,8 +1036,8 @@ class NGPOccTrainer:
         return self.train_elastic_widths[elastic_width_indices]
 
 
-def main(config: NGPOccTrainerConfig):
-    trainer: NGPOccTrainer = config.setup()
+def main(config: NGPPropTrainerConfig):
+    trainer: NGPPropTrainer = config.setup()
     error_occurred = False  # Track if an error occurred
 
     try:
@@ -1062,7 +1062,7 @@ def entrypoint():
     main(
         tyro.cli(
             tyro.conf.SuppressFixed[  # Don't show unparseable (fixed) arguments in helptext.
-                tyro.conf.FlagConversionOff[NGPOccTrainerConfig]
+                tyro.conf.FlagConversionOff[NGPPropTrainerConfig]
             ],
             description=convert_markup_to_ansi(__doc__),
         )
