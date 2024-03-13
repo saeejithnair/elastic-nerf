@@ -611,14 +611,14 @@ class NGPTrainer:
             + list(self.exp_config_columns.keys())
         )
         for elastic_width in eval_elastic_widths:
-            self.load_elastic_width(int(elastic_width))
+            # self.load_elastic_width(int(elastic_width))
             psnrs, lpips, ssims, times = self.eval_width(int(elastic_width))
             psnrs_history.update(psnrs)
             lpips_history.update(lpips)
             ssim_history.update(ssims)
             elapsed_times.update(times)
 
-        self.load_full_width()
+        # self.load_full_width()
 
         avg_metrics_dict = {}
         for granularity_label in psnrs_history:
