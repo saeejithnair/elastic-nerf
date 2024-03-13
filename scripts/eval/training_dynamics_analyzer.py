@@ -236,7 +236,8 @@ class SweepDynamicsPlotter:
         scene_names = [config.scene for config in self.configs]
         self.sorted_run_indices = np.argsort(scene_names)
 
-    def get_checkpoints(self, run_id: str, results_dir: Path):
+    @staticmethod
+    def get_checkpoints(run_id: str, results_dir: Path):
         ckpt_dir = results_dir / run_id / "checkpoints"
         ckpt_files = list(ckpt_dir.glob("*.pt"))
         # Parse checkpoint files based on the step number.
@@ -247,7 +248,8 @@ class SweepDynamicsPlotter:
 
         return ckpt_dict
 
-    def get_weights_grads(self, run_id: str, results_dir: Path):
+    @staticmethod
+    def get_weights_grads(run_id: str, results_dir: Path):
         weights_grads_dir = results_dir / run_id / "weights_grads"
         weights_grads_files = list(weights_grads_dir.glob("*.pt"))
         # Parse weights_grads files based on the step number and model.
@@ -265,7 +267,8 @@ class SweepDynamicsPlotter:
 
         return weights_grads_dict
 
-    def get_config(self, run_id: str, results_dir: Path):
+    @staticmethod
+    def get_config(run_id: str, results_dir: Path):
         config_file = results_dir / run_id / "config.yaml"
         # Load yaml file from string
         with open(config_file, "r") as file:

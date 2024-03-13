@@ -72,6 +72,21 @@ def contract_to_unisphere(
         return x
 
 
+def pack_weights(model):
+    # List to hold all the weights and biases
+    all_weights = []
+
+    # Loop through each layer and extract weights and biases
+    for name, param in model.named_parameters():
+        # Flatten then add to the list
+        all_weights.append(param.data.cpu().flatten())
+
+    # Concatenate all the weights and biases into a single buffer
+    packed_weights = torch.concatenate(all_weights)
+
+    return packed_weights
+
+
 @dataclass
 class NGPRadianceFieldConfig(InstantiateConfig):
     """Instance-NGP Radiance Field Config"""
@@ -152,7 +167,94 @@ class ElasticMLPWithInputEncoding(torch.nn.Module):
             return self.elastic_mlp(x, **kwargs)
 
 
-class NGPRadianceField(torch.nn.Module):
+class NGPField(torch.nn.Module):
+    def __init__(self):
+        super().__init__()
+
+    def get_encoding_config(self):
+        return {
+            "otype": "HashGrid",
+            "n_levels": self.n_levels,
+            "n_features_per_level": 2,
+            "log2_hashmap_size": self.log2_hashmap_size,
+            "base_resolution": self.base_resolution,
+            "per_level_scale": self.per_level_scale,
+        }
+
+    def make_fused_base(self, width: int):
+        # FullyFusedMLP only supports certain widths.
+        ff_supported_widths = [16, 32, 64, 128]
+        otype = "FullyFusedMLP" if width in ff_supported_widths else "CutlassMLP"
+
+        return tcnn.NetworkWithInputEncoding(
+            n_input_dims=self.num_dim,
+            n_output_dims=self.mlp_base_out_dim,
+            encoding_config=self.encoding_config,
+            network_config={
+                "otype": otype,
+                "activation": "ReLU",
+                "output_activation": "None",
+                "n_neurons": width,
+                "n_hidden_layers": 1,
+            },
+        )
+
+    def load_elastic_width(
+        self, elastic_width: int, step: int, device: Optional[torch.device] = None
+    ):
+        if not hasattr(self, "full_widths") or self.full_widths["step"] != step:
+            self.freeze_full_width(step)
+
+        full_width_mlp_base = copy.deepcopy(self.full_widths["mlp_base"])
+        full_width_mlp_base.elastic_mlp = (
+            full_width_mlp_base.elastic_mlp.get_sliced_net(elastic_width)
+        )
+
+        self.mlp_base = full_width_mlp_base
+        if device is not None:
+            self.mlp_base.to(device)
+
+    def freeze_full_width(self, step: int):
+        assert isinstance(
+            self.mlp_base, ElasticMLPWithInputEncoding
+        ), "mlp_base is not of type ElasticMLPWithInputEncoding. Please switch to elastic before freezing."
+        self.full_widths = {
+            "step": step,
+            "mlp_base": copy.deepcopy(self.mlp_base.to(torch.device("cpu"))),
+        }
+
+    def load_full_width(self, device):
+        if not hasattr(self, "full_widths"):
+            raise RuntimeError("No full width to load")
+
+        self.mlp_base = self.full_widths["mlp_base"].to(device)
+
+    def load_fused(
+        self, elastic_width: int, step: int, device: Optional[torch.device] = None
+    ):
+        """Replace the elastic MLP with a fully fused MLP and load the weights
+        from the elastic MLP into the fully fused MLP. Also saves the elastic MLP
+        so that it can be loaded back later."""
+        self.load_elastic_width(elastic_width, step, device)
+        ff_mlp_base = self.make_fused_base(elastic_width)
+        # Extract and pack the weights from the ElasticMLP
+        packed_weights = pack_weights(self.mlp_base)
+
+        # Ensure the buffer size matches the total parameters of the tcnn model
+        assert (
+            packed_weights.numel() == ff_mlp_base.params.numel()
+        ), f"Mismatch in the number of parameters between packed ElasticMLP and Fused TCNN MLP! {packed_weights.numel()} vs {ff_mlp_base.params.numel()} for width {elastic_width}."
+
+        # Initialize the tcnn model with the packed weights
+        # We need to ensure the dtype and device match before assignment
+        ff_mlp_base.params.data = packed_weights.to(
+            dtype=ff_mlp_base.params.dtype, device=device
+        )
+
+        self.mlp_base = ff_mlp_base
+
+
+class NGPRadianceField(NGPField):
     """Instance-NGP Radiance Field"""
 
     def __init__(
@@ -184,7 +286,7 @@ class NGPRadianceField(torch.nn.Module):
         self.n_levels = n_levels
         self.log2_hashmap_size = log2_hashmap_size
 
-        per_level_scale = np.exp(
+        self.per_level_scale = np.exp(
             (np.log(max_resolution) - np.log(base_resolution)) / (n_levels - 1)
         ).tolist()
 
@@ -204,34 +306,17 @@ class NGPRadianceField(torch.nn.Module):
                 },
             )
 
-        self.encoding_config = {
-            "otype": "HashGrid",
-            "n_levels": n_levels,
-            "n_features_per_level": 2,
-            "log2_hashmap_size": log2_hashmap_size,
-            "base_resolution": base_resolution,
-            "per_level_scale": per_level_scale,
-        }
+        self.encoding_config = self.get_encoding_config()
+        self.mlp_base_out_dim = 1 + self.geo_feat_dim
         if self.config.use_elastic:
             self.mlp_base = ElasticMLPWithInputEncoding(
                 input_dim=num_dim,
-                output_dim=1 + self.geo_feat_dim,
+                output_dim=self.mlp_base_out_dim,
                 encoding_config=self.encoding_config,
                 elastic_mlp=config.base,
             )
         else:
-            self.mlp_base = tcnn.NetworkWithInputEncoding(
-                n_input_dims=num_dim,
-                n_output_dims=1 + self.geo_feat_dim,
-                encoding_config=self.encoding_config,
-                network_config={
-                    "otype": "FullyFusedMLP",
-                    "activation": "ReLU",
-                    "output_activation": "None",
-                    "n_neurons": 64,
-                    "n_hidden_layers": 1,
-                },
-            )
+            self.mlp_base = self.make_fused_base(width=64)
         if self.geo_feat_dim > 0:
             self.mlp_head = tcnn.Network(
                 n_input_dims=(
@@ -310,35 +395,6 @@ class NGPRadianceField(torch.nn.Module):
             rgb = self._query_rgb(directions, embedding=embedding)
         return rgb, density  # type: ignore
 
-    def load_elastic_width(
-        self, elastic_width: int, step: int, device: Optional[torch.device] = None
-    ):
-        if not hasattr(self, "full_widths"):
-            self.full_widths = {
-                "step": step,
-                "mlp_base": copy.deepcopy(
-                    self.mlp_base.elastic_mlp.to(torch.device("cpu"))
-                ),
-            }
-        elif self.full_widths["step"] != step:
-            self.full_widths = {
-                "step": step,
-                "mlp_base": copy.deepcopy(
-                    self.mlp_base.elastic_mlp.to(torch.device("cpu"))
-                ),
-            }
-
-        new_width_mlp_base = self.full_widths["mlp_base"].get_sliced_net(elastic_width)
-
-        if device is not None:
-            self.mlp_base.elastic_mlp = new_width_mlp_base.to(device)
-
-    def load_full_width(self, device):
-        if not hasattr(self, "full_widths"):
-            raise RuntimeError("No full width to load")
-        
-        self.mlp_base.elastic_mlp = self.full_widths["mlp_base"].to(device)
-
 
 @dataclass
 class NGPDensityFieldConfig(InstantiateConfig):
@@ -356,7 +412,7 @@ class NGPDensityFieldConfig(InstantiateConfig):
     """Configuration if using an elastic MLP."""
 
 
-class NGPDensityField(torch.nn.Module):
+class NGPDensityField(NGPField):
     """Instance-NGP Density Field used for resampling"""
 
     def __init__(
@@ -384,38 +440,21 @@ class NGPDensityField(torch.nn.Module):
         self.n_levels = n_levels
         self.log2_hashmap_size = log2_hashmap_size
 
-        per_level_scale = np.exp(
+        self.per_level_scale = np.exp(
             (np.log(max_resolution) - np.log(base_resolution)) / (n_levels - 1)
         ).tolist()
 
-        encoding_config = {
-            "otype": "HashGrid",
-            "n_levels": n_levels,
-            "n_features_per_level": 2,
-            "log2_hashmap_size": log2_hashmap_size,
-            "base_resolution": base_resolution,
-            "per_level_scale": per_level_scale,
-        }
+        self.encoding_config = self.get_encoding_config()
+        self.mlp_base_out_dim = 1
         if self.config.use_elastic:
             self.mlp_base = ElasticMLPWithInputEncoding(
                 input_dim=num_dim,
-                output_dim=1,
-                encoding_config=encoding_config,
+                output_dim=self.mlp_base_out_dim,
+                encoding_config=self.encoding_config,
                 elastic_mlp=config.base,
             )
         else:
-            self.mlp_base = tcnn.NetworkWithInputEncoding(
-                n_input_dims=num_dim,
-                n_output_dims=1,
-                encoding_config=encoding_config,
-                network_config={
-                    "otype": "FullyFusedMLP",
-                    "activation": "ReLU",
-                    "output_activation": "None",
-                    "n_neurons": 64,
-                    "n_hidden_layers": 1,
-                },
-            )
+            self.mlp_base = self.make_fused_base(width=64)
 
     def forward(self, positions: torch.Tensor, active_neurons: Optional[int] = None):
         kwargs = {}
@@ -437,32 +476,3 @@ class NGPDensityField(torch.nn.Module):
             self.density_activation(density_before_activation) * selector[..., None]
         )
         return density
-
-    def load_elastic_width(
-        self, elastic_width: int, step: int, device: Optional[torch.device] = None
-    ):
-        if not hasattr(self, "full_widths"):
-            self.full_widths = {
-                "step": step,
-                "mlp_base": copy.deepcopy(
-                    self.mlp_base.elastic_mlp.to(torch.device("cpu"))
-                ),
-            }
-        elif self.full_widths["step"] != step:
-            self.full_widths = {
-                "step": step,
-                "mlp_base": copy.deepcopy(
-                    self.mlp_base.elastic_mlp.to(torch.device("cpu"))
-                ),
-            }
-
-        new_width_mlp_base = self.full_widths["mlp_base"].get_sliced_net(elastic_width)
-
-        if device is not None:
-            self.mlp_base.elastic_mlp = new_width_mlp_base.to(device)
-
-    def load_full_width(self, device):
-        if not hasattr(self, "full_widths"):
-            raise RuntimeError("No full width to load")
-
-        self.mlp_base.elastic_mlp = self.full_widths["mlp_base"].to(device)

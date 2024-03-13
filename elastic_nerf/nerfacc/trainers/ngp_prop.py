@@ -191,6 +191,9 @@ class NGPPropTrainer(NGPTrainer):
             self.models_to_watch[f"proposal_net_{i}"] = prop_net
 
     def get_elastic_forward_kwargs(self, elastic_width):
+        if self.config.fused_eval:
+            return {}
+
         kwargs = {}
         if self.config.radiance_field.use_elastic:
             kwargs["active_neurons_radiance"] = elastic_width
@@ -316,3 +319,19 @@ class NGPPropTrainer(NGPTrainer):
         self.update_elastic_width_sample_counts(granularities_to_sample)
 
         return metrics_dict, gradient_updated
+
+    @staticmethod
+    def load_trainer(
+        config: str,
+        log_dir: Path,
+        wandb_dir: Path,
+        ckpt_path: Optional[Path] = None,
+    ) -> "NGPPropTrainer":
+        # Load model from config
+        return NGPTrainer.load_trainer(
+            config,
+            log_dir,
+            wandb_dir,
+            config_type=NGPPropTrainerConfig,
+            ckpt_path=ckpt_path,
+        )

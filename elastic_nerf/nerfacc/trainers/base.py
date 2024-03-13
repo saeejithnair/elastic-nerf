@@ -103,6 +103,8 @@ class NGPBaseTrainerConfig(PrintableConfig):
     """Number of widths to use for evaluation."""
     max_steps: int = 20000
     """Maximum number of training steps."""
+    fused_eval: bool = True
+    """Whether to convert elastic modules to TCNN Fused before eval."""
     num_eval_all_steps: int = 5000
     """Number of iterations after which to perform evaluation during training."""
     num_checkpoint_steps: int = 5000
@@ -611,14 +613,14 @@ class NGPTrainer:
             + list(self.exp_config_columns.keys())
         )
         for elastic_width in eval_elastic_widths:
-            # self.load_elastic_width(int(elastic_width))
+            self.load_width(int(elastic_width))
             psnrs, lpips, ssims, times = self.eval_width(int(elastic_width))
             psnrs_history.update(psnrs)
             lpips_history.update(lpips)
             ssim_history.update(ssims)
             elapsed_times.update(times)
 
-        # self.load_full_width()
+        self.load_full_width()
 
         avg_metrics_dict = {}
         for granularity_label in psnrs_history:
@@ -796,14 +798,41 @@ class NGPTrainer:
                 param.grad = ckpt["gradients"][name]
 
     @torch.no_grad()
-    def load_elastic_width(self, elastic_width: int):
+    def load_width(self, elastic_width: int):
         """Load the model with the specified elastic width."""
 
         for name, model in self.models_to_watch.items():
-            model.load_elastic_width(elastic_width, self.step, self.device)
+            if model.config.use_elastic:
+                if self.config.fused_eval:
+                    model.load_fused(elastic_width, self.step, self.device)
+                else:
+                    model.load_elastic_width(elastic_width, self.step, self.device)
+                print(
+                    f"Loaded {name} with elastic width {elastic_width}, fused_eval: {self.config.fused_eval}"
+                )
 
     @torch.no_grad()
     def load_full_width(self):
-        """Load the model with the full width."""
+        """Load the model with the full elastic width."""
         for name, model in self.models_to_watch.items():
-            model.load_full_width(self.device)
+            if model.config.use_elastic:
+                model.load_full_width(self.device)
+
+    @staticmethod
+    def load_trainer(
+        config: str,
+        log_dir: Path,
+        wandb_dir: Path,
+        config_type: Type,
+        ckpt_path: Optional[Path] = None,
+    ):
+        # Load model from config
+        trainer_config = from_yaml(config_type, config)
+        trainer_config.log_dir = log_dir
+        trainer_config.wandb_dir = wandb_dir
+        trainer_config.enable_logging = False
+        if ckpt_path is not None:
+            trainer_config.model_path = ckpt_path
+        trainer = trainer_config.setup()
+
+        return trainer

@@ -147,7 +147,9 @@ class NGPOccTrainer(NGPTrainer):
         }
 
     def get_elastic_forward_kwargs(self, elastic_width):
-        if not self.config.radiance_field.use_elastic:
+        if not self.config.radiance_field.use_elastic or self.config.fused_eval:
+            # No need to pass active_neurons to the radiance field if it's
+            # not elastic or if we want to eval after fusing the model.
             return {}
 
         return {"active_neurons": int(elastic_width)}
@@ -298,28 +300,10 @@ class NGPOccTrainer(NGPTrainer):
         ckpt_path: Optional[Path] = None,
     ) -> "NGPOccTrainer":
         # Load model from config
-        trainer_config: NGPOccTrainerConfig = from_yaml(NGPOccTrainerConfig, config)
-        trainer_config.log_dir = log_dir
-        trainer_config.wandb_dir = wandb_dir
-        trainer_config.enable_logging = False
-        if ckpt_path is not None:
-            trainer_config.model_path = ckpt_path
-        trainer = trainer_config.setup()
-
-        return trainer
-
-    def load_elastic_width(self, elastic_width: int):
-        """Load the model with the specified elastic width."""
-        if not hasattr(self, "full_width_radiance_field"):
-            self.full_width_radiance_field = copy.deepcopy(
-                self.radiance_field.to(torch.device("cpu"))
-            )
-
-        new_width_elastic_net = (
-            self.full_width_radiance_field.mlp_base.elastic_mlp.get_sliced_net(
-                elastic_width
-            )
+        return NGPTrainer.load_trainer(
+            config,
+            log_dir,
+            wandb_dir,
+            config_type=NGPOccTrainerConfig,
+            ckpt_path=ckpt_path,
         )
-        self.radiance_field.mlp_base.elastic_mlp = new_width_elastic_net
-
-        self.radiance_field.to(self.device)
