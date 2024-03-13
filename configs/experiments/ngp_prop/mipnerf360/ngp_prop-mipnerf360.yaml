@@ -4,7 +4,7 @@ entity: saeejithn
 method: grid
 description: This performs a sweep over mipnerf360 dataset with nerfacc accelerated ngp prop model.
 parameters:
-  dataset:
+  dataset-name:
     value: mipnerf360
   scene:
     values:
