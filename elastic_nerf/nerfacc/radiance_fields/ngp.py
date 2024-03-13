@@ -14,6 +14,7 @@ from torch.cuda.amp import custom_bwd, custom_fwd
 from torch.cuda.amp.autocast_mode import autocast
 
 from elastic_nerf.nerfacc.radiance_fields.mlp import ElasticMLP, ElasticMLPConfig
+import copy
 
 try:
     import tinycudann as tcnn
@@ -79,7 +80,9 @@ class NGPRadianceFieldConfig(InstantiateConfig):
     use_elastic: bool = False
     """Whether to use an elastic MLP."""
     base: ElasticMLPConfig = field(
-        default_factory=lambda: ElasticMLPConfig(output_activation=None)
+        default_factory=lambda: ElasticMLPConfig(
+            output_activation=None, bias_enabled=False
+        )
     )
     """Configuration if using an elastic MLP."""
 
@@ -306,6 +309,27 @@ class NGPRadianceField(torch.nn.Module):
             rgb = self._query_rgb(directions, embedding=embedding)
         return rgb, density  # type: ignore
 
+    def load_elastic_width(self, elastic_width: int, step: int):
+        if not hasattr(self, "full_widths"):
+            self.full_widths = {
+                "step": step,
+                "mlp_base": copy.deepcopy(
+                    self.mlp_base.elastic_mlp.to(torch.device("cpu"))
+                ),
+            }
+        elif self.full_widths["step"] != step:
+            self.full_widths = {
+                "step": step,
+                "mlp_base": copy.deepcopy(
+                    self.mlp_base.elastic_mlp.to(torch.device("cpu"))
+                ),
+            }
+
+        new_width_mlp_base = self.full_widths["mlp_base"].get_sliced_net(elastic_width)
+        self.mlp_base.elastic_mlp = new_width_mlp_base.to(
+            self.mlp_base.elastic_mlp.device
+        )
+
 
 @dataclass
 class NGPDensityFieldConfig(InstantiateConfig):
@@ -316,7 +340,9 @@ class NGPDensityFieldConfig(InstantiateConfig):
     use_elastic: bool = False
     """Whether to use an elastic MLP."""
     base: ElasticMLPConfig = field(
-        default_factory=lambda: ElasticMLPConfig(output_activation=None)
+        default_factory=lambda: ElasticMLPConfig(
+            output_activation=None, bias_enabled=False
+        )
     )
     """Configuration if using an elastic MLP."""
 
@@ -402,3 +428,24 @@ class NGPDensityField(torch.nn.Module):
             self.density_activation(density_before_activation) * selector[..., None]
         )
         return density
+
+    def load_elastic_width(self, elastic_width: int, step: int):
+        if not hasattr(self, "full_widths"):
+            self.full_widths = {
+                "step": step,
+                "mlp_base": copy.deepcopy(
+                    self.mlp_base.elastic_mlp.to(torch.device("cpu"))
+                ),
+            }
+        elif self.full_widths["step"] != step:
+            self.full_widths = {
+                "step": step,
+                "mlp_base": copy.deepcopy(
+                    self.mlp_base.elastic_mlp.to(torch.device("cpu"))
+                ),
+            }
+
+        new_width_mlp_base = self.full_widths["mlp_base"].get_sliced_net(elastic_width)
+        self.mlp_base.elastic_mlp = new_width_mlp_base.to(
+            self.mlp_base.elastic_mlp.device
+        )

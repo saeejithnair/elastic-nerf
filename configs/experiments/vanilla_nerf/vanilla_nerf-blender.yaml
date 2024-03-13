@@ -17,8 +17,6 @@ parameters:
   sampling-strategy:
     values:
       - uniform
-      - exp-reverse
-      - exp
   num-train-widths:
     value: 6
   num-widths-to-sample:
@@ -27,7 +25,6 @@ parameters:
       - 3
   radiance-field.mlp.base.use-granular-norm:
     values:
-      - True
       - False
 command:
   - python

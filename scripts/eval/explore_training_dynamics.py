@@ -19,6 +19,7 @@ from elastic_nerf.nerfacc.radiance_fields.ngp import (
 from pathlib import Path
 
 import sys
+
 sys.path.append(str(Path(__file__).resolve().parents[2]))
 from elastic_nerf.utils import dataset_utils as du
 from elastic_nerf.utils import notebook_utils as nu
@@ -92,8 +93,6 @@ sweep = wu.fetch_sweep(sweep_id)
 for run in sweep.runs:
     print(run.id)
 # %%
-results_cache_dir = Path("/home/user/shared/results/elastic-nerf")
-results_dict = {}
 
 
 def get_checkpoints(run_id: str, results_dir: Path):
@@ -134,12 +133,6 @@ def get_config(run_id: str, results_dir: Path):
         yaml_string = file.read()
     return yaml_string
 
-
-run_results = {}
-run_results["checkpoints"] = get_checkpoints(sweep.runs[0].id, results_cache_dir)
-run_results["config"] = get_config(sweep.runs[0].id, results_cache_dir)
-run_results["weights_grads"] = get_weights_grads(sweep.runs[0].id, results_cache_dir)
-print(run_results)
 
 # %%
 
@@ -186,9 +179,18 @@ from elastic_nerf.utils import logging_utils as lu
 from scripts.train.train_elastic_ngp_occ import NGPOccTrainer
 
 set_random_seed(42)
+results_cache_dir = Path("/home/user/shared/results/elastic-nerf")
+results_dict = {}
+
+run_id = "d85nyk68"
+run_results = {}
+run_results["checkpoints"] = get_checkpoints(run_id, results_cache_dir)
+run_results["config"] = get_config(run_id, results_cache_dir)
+run_results["weights_grads"] = get_weights_grads(run_id, results_cache_dir)
+print(run_results)
 
 
-run_id = sweep.runs[0].id
+# run_id = sweep.runs[0].id
 log_dir = Path("/home/user/shared/results/elastic-nerf") / run_id
 wandb_dir = Path("/home/user/shared/wandb_cache/elastic-nerf") / run_id
 config = run_results["config"]
