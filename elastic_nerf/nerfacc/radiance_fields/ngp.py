@@ -7,6 +7,7 @@ from typing import Callable, List, Optional, Tuple, Type, Union
 
 import numpy as np
 import torch
+from zmq import has
 from gonas.configs.base_config import FlexibleInstantiateConfig, InstantiateConfig
 from nerfstudio import data
 from torch.autograd import Function
@@ -309,7 +310,9 @@ class NGPRadianceField(torch.nn.Module):
             rgb = self._query_rgb(directions, embedding=embedding)
         return rgb, density  # type: ignore
 
-    def load_elastic_width(self, elastic_width: int, step: int):
+    def load_elastic_width(
+        self, elastic_width: int, step: int, device: Optional[torch.device] = None
+    ):
         if not hasattr(self, "full_widths"):
             self.full_widths = {
                 "step": step,
@@ -326,9 +329,15 @@ class NGPRadianceField(torch.nn.Module):
             }
 
         new_width_mlp_base = self.full_widths["mlp_base"].get_sliced_net(elastic_width)
-        self.mlp_base.elastic_mlp = new_width_mlp_base.to(
-            self.mlp_base.elastic_mlp.device
-        )
+
+        if device is not None:
+            self.mlp_base.elastic_mlp = new_width_mlp_base.to(device)
+
+    def load_full_width(self, device):
+        if not hasattr(self, "full_widths"):
+            raise RuntimeError("No full width to load")
+        
+        self.mlp_base.elastic_mlp = self.full_widths["mlp_base"].to(device)
 
 
 @dataclass
@@ -429,7 +438,9 @@ class NGPDensityField(torch.nn.Module):
         )
         return density
 
-    def load_elastic_width(self, elastic_width: int, step: int):
+    def load_elastic_width(
+        self, elastic_width: int, step: int, device: Optional[torch.device] = None
+    ):
         if not hasattr(self, "full_widths"):
             self.full_widths = {
                 "step": step,
@@ -446,6 +457,12 @@ class NGPDensityField(torch.nn.Module):
             }
 
         new_width_mlp_base = self.full_widths["mlp_base"].get_sliced_net(elastic_width)
-        self.mlp_base.elastic_mlp = new_width_mlp_base.to(
-            self.mlp_base.elastic_mlp.device
-        )
+
+        if device is not None:
+            self.mlp_base.elastic_mlp = new_width_mlp_base.to(device)
+
+    def load_full_width(self, device):
+        if not hasattr(self, "full_widths"):
+            raise RuntimeError("No full width to load")
+
+        self.mlp_base.elastic_mlp = self.full_widths["mlp_base"].to(device)

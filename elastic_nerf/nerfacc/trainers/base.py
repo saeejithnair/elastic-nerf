@@ -556,16 +556,12 @@ class NGPTrainer:
 
         return metrics_dict, images_dict
 
-    def load_elastic_width(self, elastic_width: int):
-        raise NotImplementedError
-
     def eval_width(self, elastic_width: int):
         psnrs = defaultdict(list)
         lpips = defaultdict(list)
         ssims = defaultdict(list)
         times = defaultdict(list)
         self.estimator.eval()
-        self.load_elastic_width(elastic_width)
         for name, model in self.models_to_watch.items():
             model.eval()
 
@@ -615,12 +611,14 @@ class NGPTrainer:
             + list(self.exp_config_columns.keys())
         )
         for elastic_width in eval_elastic_widths:
-            start_time = time.time()
+            self.load_elastic_width(int(elastic_width))
             psnrs, lpips, ssims, times = self.eval_width(int(elastic_width))
             psnrs_history.update(psnrs)
             lpips_history.update(lpips)
             ssim_history.update(ssims)
             elapsed_times.update(times)
+
+        self.load_full_width()
 
         avg_metrics_dict = {}
         for granularity_label in psnrs_history:
@@ -797,8 +795,15 @@ class NGPTrainer:
             if name in ckpt["gradients"]:
                 param.grad = ckpt["gradients"][name]
 
+    @torch.no_grad()
     def load_elastic_width(self, elastic_width: int):
         """Load the model with the specified elastic width."""
 
         for name, model in self.models_to_watch.items():
-            model.load_elastic_width(elastic_width, self.step)
+            model.load_elastic_width(elastic_width, self.step, self.device)
+
+    @torch.no_grad()
+    def load_full_width(self):
+        """Load the model with the full width."""
+        for name, model in self.models_to_watch.items():
+            model.load_full_width(self.device)
