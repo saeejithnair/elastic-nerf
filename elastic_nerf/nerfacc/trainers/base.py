@@ -12,7 +12,7 @@ import zipfile
 from collections import defaultdict
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
-from typing import Any, Dict, List, Literal, Optional, Tuple, Type, Union
+from typing import Any, Dict, List, Literal, Optional, Sequence, Tuple, Type, Union
 from flask import g
 
 import numpy as np
@@ -150,6 +150,7 @@ class NGPTrainer:
     scheduler: torch.optim.lr_scheduler.LRScheduler
     grad_scaler: torch.cuda.amp.GradScaler
     models_to_watch: Dict[str, torch.nn.Module]
+    frozen: Dict[str, Union[torch.nn.Module, Sequence[torch.nn.Module]]]
 
     def __init__(self, config: NGPBaseTrainerConfig):
         self.config = config
@@ -205,6 +206,9 @@ class NGPTrainer:
 
         # Set up wandb
         self.setup_logging()
+
+        # Set up the frozen models for evaluation
+        self.freeze()
 
     def setup_logging(self):
         self.wandb_dir = self.config.wandb_dir
@@ -520,13 +524,17 @@ class NGPTrainer:
     def render(self, rays, render_bkgd, **kwargs):
         raise NotImplementedError
 
-    def eval_image(self, img_idx, elastic_width) -> Tuple[Dict, Dict]:
+    def eval_image(
+        self, img_idx, elastic_width, **modules_for_eval
+    ) -> Tuple[Dict, Dict]:
         data = self.test_dataset[img_idx]
         rays, pixels, render_bkgd = data["rays"], data["pixels"], data["color_bkgd"]
 
         elastic_width = int(elastic_width)
         kwargs = self.get_elastic_forward_kwargs(elastic_width, eval=True)
-        rgb, acc, depth, extras = self.render(rays, render_bkgd, **kwargs)
+        rgb, acc, depth, extras = self.render(
+            rays, render_bkgd, **modules_for_eval, **kwargs
+        )
 
         if isinstance(extras, dict):
             # Last argument is dict for propnet, and n_rendering_samples
@@ -558,21 +566,46 @@ class NGPTrainer:
 
         return metrics_dict, images_dict
 
+    def load_width(self, elastic_width, module):
+        """Load the model with a specific width."""
+        module_copy = copy.deepcopy(module)
+        if hasattr(module, "load_width"):
+            module_copy.load_width(elastic_width, load_fused=self.config.fused_eval)
+
+        return module_copy.to(self.device)
+
+    def get_modules_for_eval(self, elastic_width):
+        modules_for_eval = {}
+        for name, module in self.frozen.items():
+            if isinstance(module, Sequence):
+                modules_for_eval[name] = [
+                    self.load_width(elastic_width, m).eval() for m in module
+                ]
+            elif isinstance(module, torch.nn.Module):
+                modules_for_eval[name] = self.load_width(elastic_width, module).eval()
+            else:
+                raise ValueError(f"Unknown module type {type(module)}")
+
+        return modules_for_eval
+
     def eval_width(self, elastic_width: int):
         psnrs = defaultdict(list)
         lpips = defaultdict(list)
         ssims = defaultdict(list)
         times = defaultdict(list)
 
-        self.load_width(int(elastic_width))
         self.set_mode(train=False)
+
+        modules_for_eval = self.get_modules_for_eval(elastic_width)
 
         for i in tqdm.tqdm(
             range(len(self.test_dataset)), desc="Test Dataset", leave=True
         ):
             granularity_label = f"elastic_{elastic_width}"
             start_time = time.time()
-            metrics_dict, images_dict = self.eval_image(i, elastic_width)
+            metrics_dict, images_dict = self.eval_image(
+                i, elastic_width, **modules_for_eval
+            )
             times[granularity_label].append(time.time() - start_time)
             psnrs[granularity_label].append(metrics_dict["psnr"])
             lpips[granularity_label].append(metrics_dict["lpips"])
@@ -596,8 +629,6 @@ class NGPTrainer:
                 commit=False,
             )
 
-        self.load_full_width()
-
         return psnrs, lpips, ssims, times
 
     @torch.no_grad()
@@ -614,6 +645,11 @@ class NGPTrainer:
             columns=self.eval_summary_table_columns
             + list(self.exp_config_columns.keys())
         )
+        # Freeze modules for evaluation. This is so that we can load the
+        # copies of the frozen modules at different widths for evaluation
+        # without affecting the already registered training parameters in the optimizer.
+        self.freeze()
+
         for elastic_width in eval_elastic_widths:
             psnrs, lpips, ssims, times = self.eval_width(int(elastic_width))
             psnrs_history.update(psnrs)
@@ -809,24 +845,9 @@ class NGPTrainer:
             if name in ckpt["gradients"]:
                 param.grad = ckpt["gradients"][name]
 
-    def load_width(self, elastic_width: int):
-        """Load the model with the specified elastic width."""
-
-        for name, model in self.models_to_watch.items():
-            if model.config.use_elastic:
-                if self.config.fused_eval:
-                    model.load_fused(elastic_width, self.step, self.device)
-                else:
-                    model.load_elastic_width(elastic_width, self.step, self.device)
-                print(
-                    f"Loaded {name} with elastic width {elastic_width}, fused_eval: {self.config.fused_eval}"
-                )
-
-    def load_full_width(self):
-        """Load the model with the full elastic width."""
-        for name, model in self.models_to_watch.items():
-            if model.config.use_elastic:
-                model.load_full_width(self.device)
+    def freeze(self):
+        """Saves a deepcopy of models to be used for evaluation."""
+        raise NotImplementedError
 
     @staticmethod
     def load_trainer(

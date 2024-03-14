@@ -14,7 +14,7 @@ import zipfile
 from collections import defaultdict
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
-from typing import Any, Dict, List, Literal, Optional, Tuple, Type, Union
+from typing import Any, Dict, List, Literal, Optional, Sequence, Tuple, Type, Union
 
 import numpy as np
 import torch
@@ -156,10 +156,10 @@ class NGPOccTrainer(NGPTrainer):
 
         return {"active_neurons": int(elastic_width)}
 
-    def render(self, rays, render_bkgd, **kwargs):
+    def render(self, rays, render_bkgd, radiance_field=None, estimator=None, **kwargs):
         return render_image_with_occgrid(
-            self.radiance_field,
-            self.estimator,
+            self.radiance_field if radiance_field is None else radiance_field,
+            self.estimator if estimator is None else estimator,
             rays,
             # rendering options
             near_plane=self.dataset.near_plane,
@@ -195,7 +195,9 @@ class NGPOccTrainer(NGPTrainer):
         rays, pixels, render_bkgd = self.get_train_data()
         kwargs = self.get_elastic_forward_kwargs(elastic_width)
 
-        rgb, _, depth, n_rendering_samples = self.render(rays, render_bkgd, **kwargs)
+        rgb, _, depth, n_rendering_samples = self.render(
+            rays, render_bkgd, self.radiance_field, self.estimator, **kwargs
+        )
 
         if n_rendering_samples == 0:
             metrics = {
@@ -234,7 +236,7 @@ class NGPOccTrainer(NGPTrainer):
     ) -> Tuple[Dict[str, Union[float, int]], bool]:
         """Perform a single training step."""
         self.set_mode(train=True)
-        
+
         granularities_to_sample, granularity_loss_weight = self.sample_granularities()
 
         def occ_eval_fn(x):
@@ -310,3 +312,9 @@ class NGPOccTrainer(NGPTrainer):
             config_type=NGPOccTrainerConfig,
             ckpt_path=ckpt_path,
         )
+
+    def freeze(self):
+        """Saves a deepcopy of models to be used for evaluation."""
+        self.frozen = {}
+        self.frozen["estimator"] = copy.deepcopy(self.estimator)
+        self.frozen["radiance_field"] = copy.deepcopy(self.radiance_field)

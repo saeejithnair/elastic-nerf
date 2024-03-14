@@ -14,7 +14,7 @@ from collections import defaultdict
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
 from typing import Any, Dict, List, Literal, Optional, Tuple, Type, Union
-
+import copy
 import numpy as np
 import torch
 import torch.nn.functional as F
@@ -201,7 +201,15 @@ class NGPPropTrainer(NGPTrainer):
             kwargs["active_neurons_prop"] = elastic_width
         return kwargs
 
-    def render(self, rays, render_bkgd, **kwargs):
+    def render(
+        self,
+        rays,
+        render_bkgd,
+        radiance_field=None,
+        estimator=None,
+        proposal_networks=None,
+        **kwargs,
+    ):
         rgb, acc, depth, extras = render_image_with_propnet(
             self.radiance_field,
             self.proposal_networks,
@@ -332,3 +340,11 @@ class NGPPropTrainer(NGPTrainer):
             config_type=NGPPropTrainerConfig,
             ckpt_path=ckpt_path,
         )
+
+    def freeze(self):
+        """Saves a deepcopy of models to be used for evaluation."""
+        self.frozen = {}
+        self.frozen["estimator"] = copy.deepcopy(self.estimator)
+        self.frozen["radiance_field"] = copy.deepcopy(self.radiance_field)
+        self.frozen["proposal_networks"] = copy.deepcopy(self.proposal_networks)
+

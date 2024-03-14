@@ -136,6 +136,28 @@ class NGPRadianceFieldConfig(InstantiateConfig):
         return cls
 
 
+@dataclass
+class NGPDensityFieldConfig(InstantiateConfig):
+    """Instance-NGP Radiance Field Config"""
+
+    _target: Type = field(default_factory=lambda: NGPDensityField)
+
+    use_elastic: bool = False
+    """Whether to use an elastic MLP."""
+    pad_val: int = 0
+    """Value to use for padding encoder output."""
+    align_inputs: bool = False
+    """Whether to align the input dimensions to the next highest multiple of 16."""
+    align_outputs: bool = False
+    """Whether to align the output dimensions to the next highest multiple of 16."""
+    base: ElasticMLPConfig = field(
+        default_factory=lambda: ElasticMLPConfig(
+            output_activation=None, bias_enabled=False
+        )
+    )
+    """Configuration if using an elastic MLP."""
+
+
 class ElasticMLPWithInputEncoding(torch.nn.Module):
     """Elastic MLP with input encoding"""
 
@@ -212,6 +234,8 @@ class ElasticMLPWithInputEncoding(torch.nn.Module):
 
 
 class NGPField(torch.nn.Module):
+    config: Union[NGPRadianceFieldConfig, NGPDensityFieldConfig]
+
     def __init__(self):
         super().__init__()
 
@@ -248,41 +272,32 @@ class NGPField(torch.nn.Module):
         )
 
     def load_elastic_width(
-        self, elastic_width: int, step: int, device: Optional[torch.device] = None
+        self,
+        elastic_width: int,
     ):
-        if self.full_widths["step"] != step:
-            self.freeze_full_width(step)
-
-        full_width_mlp_base = copy.deepcopy(self.full_widths["mlp_base"])
-        full_width_mlp_base.elastic_mlp = (
-            full_width_mlp_base.elastic_mlp.get_sliced_net(elastic_width)
+        """Replaces base size modules with their smaller width version."""
+        self.mlp_base.elastic_mlp = self.mlp_base.elastic_mlp.get_sliced_net(
+            elastic_width
         )
 
-        self.mlp_base = full_width_mlp_base
-        if device is not None:
-            self.mlp_base.to(device)
-
-    def freeze_full_width(self, step: int):
-        print(f"Freezing full width at step {step}")
-        assert isinstance(
-            self.mlp_base, ElasticMLPWithInputEncoding
-        ), "mlp_base is not of type ElasticMLPWithInputEncoding. Please switch to elastic before freezing."
-        self.full_widths = {
-            "step": step,
-            "mlp_base": copy.deepcopy(self.mlp_base.to(torch.device("cpu"))),
-        }
-
-    def load_full_width(self, device):
-        print(f"Loading full width for mlp_base, step: {self.full_widths['step']}")
-        self.mlp_base = self.full_widths["mlp_base"].to(device)
-
-    def load_fused(
-        self, elastic_width: int, step: int, device: Optional[torch.device] = None
+    def load_width(
+        self,
+        elastic_width: int,
+        load_fused: bool,
     ):
+        if not self.config.use_elastic:
+            return
+
+        if load_fused:
+            self.load_fused(elastic_width)
+        else:
+            self.load_elastic_width(elastic_width)
+
+    def load_fused(self, elastic_width: int):
         """Replace the elastic MLP with a fully fused MLP and load the weights
         from the elastic MLP into the fully fused MLP. Also saves the elastic MLP
         so that it can be loaded back later."""
-        self.load_elastic_width(elastic_width, step, device)
+        self.load_elastic_width(elastic_width)
         ff_mlp_base = self.make_fused_base(elastic_width)
         # Extract and pack the weights from the ElasticMLP
         packed_weights = pack_weights(self.mlp_base)
@@ -295,7 +310,7 @@ class NGPField(torch.nn.Module):
         # Initialize the tcnn model with the packed weights
         # We need to ensure the dtype and device match before assignment
         ff_mlp_base.params.data = packed_weights.to(
-            dtype=ff_mlp_base.params.dtype, device=device
+            dtype=ff_mlp_base.params.dtype, device=ff_mlp_base.params.device
         )
 
         self.mlp_base = ff_mlp_base
@@ -383,8 +398,6 @@ class NGPRadianceField(NGPField):
                 },
             )
 
-        self.freeze_full_width(0)
-
     def query_density(
         self, x, return_feat: bool = False, active_neurons: Optional[int] = None
     ):
@@ -448,28 +461,6 @@ class NGPRadianceField(NGPField):
         return rgb, density  # type: ignore
 
 
-@dataclass
-class NGPDensityFieldConfig(InstantiateConfig):
-    """Instance-NGP Radiance Field Config"""
-
-    _target: Type = field(default_factory=lambda: NGPDensityField)
-
-    use_elastic: bool = False
-    """Whether to use an elastic MLP."""
-    pad_val: int = 0
-    """Value to use for padding encoder output."""
-    align_inputs: bool = False
-    """Whether to align the input dimensions to the next highest multiple of 16."""
-    align_outputs: bool = False
-    """Whether to align the output dimensions to the next highest multiple of 16."""
-    base: ElasticMLPConfig = field(
-        default_factory=lambda: ElasticMLPConfig(
-            output_activation=None, bias_enabled=False
-        )
-    )
-    """Configuration if using an elastic MLP."""
-
-
 class NGPDensityField(NGPField):
     """Instance-NGP Density Field used for resampling"""
 
@@ -516,8 +507,6 @@ class NGPDensityField(NGPField):
             )
         else:
             self.mlp_base = self.make_fused_base(width=64)
-
-        self.freeze_full_width(0)
 
     def forward(self, positions: torch.Tensor, active_neurons: Optional[int] = None):
         kwargs = {}
