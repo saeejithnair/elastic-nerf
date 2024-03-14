@@ -190,8 +190,8 @@ class NGPPropTrainer(NGPTrainer):
         for i, prop_net in enumerate(self.proposal_networks):
             self.models_to_watch[f"proposal_net_{i}"] = prop_net
 
-    def get_elastic_forward_kwargs(self, elastic_width):
-        if self.config.fused_eval:
+    def get_elastic_forward_kwargs(self, elastic_width, eval=False):
+        if eval and self.config.fused_eval:
             return {}
 
         kwargs = {}
@@ -279,10 +279,7 @@ class NGPPropTrainer(NGPTrainer):
         self,
     ) -> Tuple[Dict[str, Union[float, int]], bool]:
         """Perform a single training step."""
-        self.radiance_field.train()
-        for p in self.proposal_networks:
-            p.train()
-        self.estimator.train()
+        self.set_mode(train=True)
         granularities_to_sample, granularity_loss_weight = self.sample_granularities()
 
         proposal_requires_grad = self.proposal_requires_grad_fn(self.step)

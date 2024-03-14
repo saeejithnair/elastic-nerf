@@ -95,6 +95,12 @@ class NGPRadianceFieldConfig(InstantiateConfig):
 
     use_elastic: bool = False
     """Whether to use an elastic MLP."""
+    pad_val: int = 0
+    """Value to use for padding encoder output."""
+    align_inputs: bool = False
+    """Whether to align the input dimensions to the next highest multiple of 16."""
+    align_outputs: bool = False
+    """Whether to align the output dimensions to the next highest multiple of 16."""
     base: ElasticMLPConfig = field(
         default_factory=lambda: ElasticMLPConfig(
             output_activation=None, bias_enabled=False
@@ -141,21 +147,34 @@ class ElasticMLPWithInputEncoding(torch.nn.Module):
         elastic_mlp: ElasticMLPConfig,
         net_depth: int = 1,
         net_width: int = 64,
+        pad_value: int = 1,
+        align_inputs: bool = False,
+        align_outputs: bool = False,
     ) -> None:
         super().__init__()
         # Print all arguments for debugging
-        print(f"Using ElasticMLPWithInputEncoding for width {net_width}")
-        print(
-            f"Encoding config: {encoding_config}, n_input_dims: {input_dim}, n_output_dims: {output_dim}, net_depth: {net_depth}, net_width: {net_width}, skip_layer: None, output_enabled: True"
-        )
+        # print(f"Using ElasticMLPWithInputEncoding for width {net_width}")
+        # print(
+        #     f"Encoding config: {encoding_config}, n_input_dims: {input_dim}, n_output_dims: {output_dim}, net_depth: {net_depth}, net_width: {net_width}, skip_layer: None, output_enabled: True"
+        # )
         self.encoding = tcnn.Encoding(
             n_input_dims=input_dim, encoding_config=encoding_config
         )
+        self.pad_value = pad_value
+        self.align_inputs = align_inputs
+        self.align_outputs = align_outputs
 
         # Pad the input dim (the output from the encoding) to the next highest multiple of 16.
         # This is because for FullyFused, the TensorCores operate on 16x16 matrix chunks.
-        self.mlp_input_dim = (self.encoding.n_output_dims + 15) // 16 * 16
-        mlp_out_dim = (output_dim + 15) // 16 * 16
+        if align_inputs:
+            self.mlp_input_dim = (self.encoding.n_output_dims + 15) // 16 * 16
+        else:
+            self.mlp_input_dim = self.encoding.n_output_dims
+
+        if align_outputs:
+            mlp_out_dim = (output_dim + 15) // 16 * 16
+        else:
+            mlp_out_dim = output_dim
         self.output_dim = output_dim
         self.elastic_mlp: ElasticMLP = elastic_mlp.setup(
             input_dim=self.mlp_input_dim,
@@ -178,11 +197,18 @@ class ElasticMLPWithInputEncoding(torch.nn.Module):
             # Pad the output of the encoding with ones to the next
             # highest multiple of 16. Padding with 1 helps the first
             # layer of the network implicitly learn a bias term.
-            x = torch.nn.functional.pad(x, (0, self.mlp_input_dim - x.shape[-1]), value=1)
+            if self.align_inputs:
+                dims_to_pad = (x.shape[-1] + 15) // 16 * 16
+                x = torch.nn.functional.pad(
+                    x, (0, dims_to_pad - x.shape[-1]), value=self.pad_value
+                )
             out = self.elastic_mlp(x, **kwargs)
 
-            # Discard the padding from the output
-            return out[..., : self.output_dim]
+            if self.align_outputs:
+                # Discard the padding from the output
+                out = out[..., : self.output_dim]
+
+            return out
 
 
 class NGPField(torch.nn.Module):
@@ -204,10 +230,10 @@ class NGPField(torch.nn.Module):
         ff_supported_widths = [16, 32, 64, 128]
         otype = "FullyFusedMLP" if width in ff_supported_widths else "CutlassMLP"
         # Print all arguments for debugging
-        print(f"Using {otype} for width {width}")
-        print(
-            f"Encoding config: {self.encoding_config}, n_input_dims: {self.num_dim}, n_output_dims: {self.mlp_base_out_dim}"
-        )
+        # print(f"Using {otype} for width {width}")
+        # print(
+        #     f"Encoding config: {self.encoding_config}, n_input_dims: {self.num_dim}, n_output_dims: {self.mlp_base_out_dim}"
+        # )
         return tcnn.NetworkWithInputEncoding(
             n_input_dims=self.num_dim,
             n_output_dims=self.mlp_base_out_dim,
@@ -224,7 +250,7 @@ class NGPField(torch.nn.Module):
     def load_elastic_width(
         self, elastic_width: int, step: int, device: Optional[torch.device] = None
     ):
-        if not hasattr(self, "full_widths") or self.full_widths["step"] != step:
+        if self.full_widths["step"] != step:
             self.freeze_full_width(step)
 
         full_width_mlp_base = copy.deepcopy(self.full_widths["mlp_base"])
@@ -237,6 +263,7 @@ class NGPField(torch.nn.Module):
             self.mlp_base.to(device)
 
     def freeze_full_width(self, step: int):
+        print(f"Freezing full width at step {step}")
         assert isinstance(
             self.mlp_base, ElasticMLPWithInputEncoding
         ), "mlp_base is not of type ElasticMLPWithInputEncoding. Please switch to elastic before freezing."
@@ -246,9 +273,7 @@ class NGPField(torch.nn.Module):
         }
 
     def load_full_width(self, device):
-        if not hasattr(self, "full_widths"):
-            raise RuntimeError("No full width to load")
-
+        print(f"Loading full width for mlp_base, step: {self.full_widths['step']}")
         self.mlp_base = self.full_widths["mlp_base"].to(device)
 
     def load_fused(
@@ -336,6 +361,9 @@ class NGPRadianceField(NGPField):
                 output_dim=self.mlp_base_out_dim,
                 encoding_config=self.encoding_config,
                 elastic_mlp=config.base,
+                pad_value=config.pad_val,
+                align_inputs=config.align_inputs,
+                align_outputs=config.align_outputs,
             )
         else:
             self.mlp_base = self.make_fused_base(width=64)
@@ -354,6 +382,8 @@ class NGPRadianceField(NGPField):
                     "n_hidden_layers": 2,
                 },
             )
+
+        self.freeze_full_width(0)
 
     def query_density(
         self, x, return_feat: bool = False, active_neurons: Optional[int] = None
@@ -426,6 +456,12 @@ class NGPDensityFieldConfig(InstantiateConfig):
 
     use_elastic: bool = False
     """Whether to use an elastic MLP."""
+    pad_val: int = 0
+    """Value to use for padding encoder output."""
+    align_inputs: bool = False
+    """Whether to align the input dimensions to the next highest multiple of 16."""
+    align_outputs: bool = False
+    """Whether to align the output dimensions to the next highest multiple of 16."""
     base: ElasticMLPConfig = field(
         default_factory=lambda: ElasticMLPConfig(
             output_activation=None, bias_enabled=False
@@ -474,9 +510,14 @@ class NGPDensityField(NGPField):
                 output_dim=self.mlp_base_out_dim,
                 encoding_config=self.encoding_config,
                 elastic_mlp=config.base,
+                pad_value=config.pad_val,
+                align_inputs=config.align_inputs,
+                align_outputs=config.align_outputs,
             )
         else:
             self.mlp_base = self.make_fused_base(width=64)
+
+        self.freeze_full_width(0)
 
     def forward(self, positions: torch.Tensor, active_neurons: Optional[int] = None):
         kwargs = {}

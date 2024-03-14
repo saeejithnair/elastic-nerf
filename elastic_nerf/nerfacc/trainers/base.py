@@ -16,6 +16,7 @@ from typing import Any, Dict, List, Literal, Optional, Tuple, Type, Union
 from flask import g
 
 import numpy as np
+from sympy import false
 import torch
 import torch.nn.functional as F
 import torchvision
@@ -103,7 +104,7 @@ class NGPBaseTrainerConfig(PrintableConfig):
     """Number of widths to use for evaluation."""
     max_steps: int = 20000
     """Maximum number of training steps."""
-    fused_eval: bool = True
+    fused_eval: bool = False
     """Whether to convert elastic modules to TCNN Fused before eval."""
     num_eval_all_steps: int = 5000
     """Number of iterations after which to perform evaluation during training."""
@@ -513,19 +514,18 @@ class NGPTrainer:
         )
         print(f"Saved model to {checkpoint_fp}")
 
-    def get_elastic_forward_kwargs(self, elastic_width):
+    def get_elastic_forward_kwargs(self, elastic_width, eval=False):
         raise NotImplementedError
 
     def render(self, rays, render_bkgd, **kwargs):
         raise NotImplementedError
 
-    @torch.no_grad()
     def eval_image(self, img_idx, elastic_width) -> Tuple[Dict, Dict]:
         data = self.test_dataset[img_idx]
         rays, pixels, render_bkgd = data["rays"], data["pixels"], data["color_bkgd"]
 
         elastic_width = int(elastic_width)
-        kwargs = self.get_elastic_forward_kwargs(elastic_width)
+        kwargs = self.get_elastic_forward_kwargs(elastic_width, eval=True)
         rgb, acc, depth, extras = self.render(rays, render_bkgd, **kwargs)
 
         if isinstance(extras, dict):
@@ -563,9 +563,9 @@ class NGPTrainer:
         lpips = defaultdict(list)
         ssims = defaultdict(list)
         times = defaultdict(list)
-        self.estimator.eval()
-        for name, model in self.models_to_watch.items():
-            model.eval()
+
+        self.load_width(int(elastic_width))
+        self.set_mode(train=False)
 
         for i in tqdm.tqdm(
             range(len(self.test_dataset)), desc="Test Dataset", leave=True
@@ -596,6 +596,8 @@ class NGPTrainer:
                 commit=False,
             )
 
+        self.load_full_width()
+
         return psnrs, lpips, ssims, times
 
     @torch.no_grad()
@@ -613,14 +615,11 @@ class NGPTrainer:
             + list(self.exp_config_columns.keys())
         )
         for elastic_width in eval_elastic_widths:
-            self.load_width(int(elastic_width))
             psnrs, lpips, ssims, times = self.eval_width(int(elastic_width))
             psnrs_history.update(psnrs)
             lpips_history.update(lpips)
             ssim_history.update(ssims)
             elapsed_times.update(times)
-
-        self.load_full_width()
 
         avg_metrics_dict = {}
         for granularity_label in psnrs_history:
@@ -697,9 +696,12 @@ class NGPTrainer:
         pbar = tqdm.tqdm(
             total=self.config.max_steps + 1, desc="Training Steps", leave=True
         )
+        self.total_train_time = 0
         for step in range(self.step, self.config.max_steps):
             # Perform a single training step and increment self.step.
+            train_start = time.time()
             metrics_dict, gradient_updated = self.train_step()
+            self.total_train_time += time.time() - train_start
 
             if (
                 self.step_check(self.step, self.config.num_log_steps)
@@ -724,7 +726,9 @@ class NGPTrainer:
             if self.step_check(self.step, self.config.num_eval_all_steps):
                 self.eval()
 
-            wandb.log({}, step=self.step)
+            wandb.log(
+                {"Train/total_time": float(self.total_train_time)}, step=self.step
+            )
             self.step += 1
 
         pbar.close()
@@ -788,6 +792,14 @@ class NGPTrainer:
 
         return granularities_to_sample, granularity_loss_weight
 
+    def set_mode(self, train: bool = True):
+        """Set the mode of the model."""
+        self.estimator.train(train)
+        for name, model in self.models_to_watch.items():
+            model.train(train)
+            for p in model.parameters():
+                p.requires_grad = train
+
     def load_weights_grads(self, weights_grads_path: Path, module_name: str):
         ckpt = torch.load(weights_grads_path)
         module = getattr(self, module_name)
@@ -797,7 +809,6 @@ class NGPTrainer:
             if name in ckpt["gradients"]:
                 param.grad = ckpt["gradients"][name]
 
-    @torch.no_grad()
     def load_width(self, elastic_width: int):
         """Load the model with the specified elastic width."""
 
@@ -811,7 +822,6 @@ class NGPTrainer:
                     f"Loaded {name} with elastic width {elastic_width}, fused_eval: {self.config.fused_eval}"
                 )
 
-    @torch.no_grad()
     def load_full_width(self):
         """Load the model with the full elastic width."""
         for name, model in self.models_to_watch.items():

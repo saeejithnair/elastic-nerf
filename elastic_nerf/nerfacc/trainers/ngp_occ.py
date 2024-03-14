@@ -146,8 +146,10 @@ class NGPOccTrainer(NGPTrainer):
             "radiance_field": self.radiance_field,
         }
 
-    def get_elastic_forward_kwargs(self, elastic_width):
-        if not self.config.radiance_field.use_elastic or self.config.fused_eval:
+    def get_elastic_forward_kwargs(self, elastic_width, eval=False):
+        if not self.config.radiance_field.use_elastic or (
+            eval and self.config.fused_eval
+        ):
             # No need to pass active_neurons to the radiance field if it's
             # not elastic or if we want to eval after fusing the model.
             return {}
@@ -231,8 +233,8 @@ class NGPOccTrainer(NGPTrainer):
         self,
     ) -> Tuple[Dict[str, Union[float, int]], bool]:
         """Perform a single training step."""
-        self.radiance_field.train()
-        self.estimator.train()
+        self.set_mode(train=True)
+        
         granularities_to_sample, granularity_loss_weight = self.sample_granularities()
 
         def occ_eval_fn(x):
@@ -264,7 +266,8 @@ class NGPOccTrainer(NGPTrainer):
         metrics_dict = {}
         for i, elastic_width in enumerate(granularities_to_sample):
             granularity_label = f"elastic_{elastic_width}"
-            torch.cuda.empty_cache()
+            if i > 1:
+                torch.cuda.empty_cache()
             loss, metrics = self.train_granular_step(
                 int(elastic_width), granularity_loss_weight
             )
