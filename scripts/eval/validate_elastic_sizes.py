@@ -16,13 +16,20 @@ config = sdp.get_config(run_id, results_cache_dir)
 checkpoints = sdp.get_checkpoints(run_id, results_cache_dir)
 
 trainer = NGPPropTrainer.load_trainer(config, log_dir=log_dir, wandb_dir=wandb_dir)
-trainer.config.model_path = checkpoints[20000]
-trainer.load_checkpoint()
+# trainer.config.model_path = checkpoints[20000]
+# trainer.load_checkpoint()
 
 # %%
 # model = trainer.radiance_field
-model = trainer.proposal_networks[0]
+model = trainer.proposal_networks[1]
 print(pack_weights(model.mlp_base).numel())
+ff = model.make_fused_base(64)
+print(ff.params.numel())
+
+# %%
+for n, p in model.named_parameters():
+    print(n, p.shape, p.numel())
+# %%
 model.load_elastic_width(64, trainer.step)
 print(pack_weights(model.mlp_base).numel())
 model.load_full_width(trainer.device)
@@ -41,7 +48,7 @@ model.load_elastic_width(width, trainer.step, trainer.device)
 ff_mlp_base = model.make_fused_base(width)
 # Extract and pack the weights from the ElasticMLP
 packed_weights = pack_weights(model.mlp_base)
-#%%
+# %%
 print(ff_mlp_base)
 print(f"Elastic packed: {packed_weights.numel()}")
 print(f"Fused: {ff_mlp_base.params.numel()}")

@@ -1,3 +1,6 @@
 [submodule "third-party/gonas"]
 	path = third-party/gonas
 	url = git@github.com:saeejithnair/gonas.git
+[submodule "third-party/tiny-cuda-nn"]
+	path = third-party/tiny-cuda-nn
+	url = https://github.com/nvlabs/tiny-cuda-nn

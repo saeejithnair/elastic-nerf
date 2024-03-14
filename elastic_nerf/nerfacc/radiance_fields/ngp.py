@@ -143,12 +143,23 @@ class ElasticMLPWithInputEncoding(torch.nn.Module):
         net_width: int = 64,
     ) -> None:
         super().__init__()
+        # Print all arguments for debugging
+        print(f"Using ElasticMLPWithInputEncoding for width {net_width}")
+        print(
+            f"Encoding config: {encoding_config}, n_input_dims: {input_dim}, n_output_dims: {output_dim}, net_depth: {net_depth}, net_width: {net_width}, skip_layer: None, output_enabled: True"
+        )
         self.encoding = tcnn.Encoding(
             n_input_dims=input_dim, encoding_config=encoding_config
         )
+
+        # Pad the input dim (the output from the encoding) to the next highest multiple of 16.
+        # This is because for FullyFused, the TensorCores operate on 16x16 matrix chunks.
+        self.mlp_input_dim = (self.encoding.n_output_dims + 15) // 16 * 16
+        mlp_out_dim = (output_dim + 15) // 16 * 16
+        self.output_dim = output_dim
         self.elastic_mlp: ElasticMLP = elastic_mlp.setup(
-            input_dim=self.encoding.n_output_dims,
-            output_dim=output_dim,
+            input_dim=self.mlp_input_dim,
+            output_dim=mlp_out_dim,
             net_depth=net_depth,
             net_width=net_width,
             skip_layer=None,
@@ -164,7 +175,14 @@ class ElasticMLPWithInputEncoding(torch.nn.Module):
 
         with autocast():
             x = self.encoding(x)
-            return self.elastic_mlp(x, **kwargs)
+            # Pad the output of the encoding with ones to the next
+            # highest multiple of 16. Padding with 1 helps the first
+            # layer of the network implicitly learn a bias term.
+            x = torch.nn.functional.pad(x, (0, self.mlp_input_dim - x.shape[-1]), value=1)
+            out = self.elastic_mlp(x, **kwargs)
+
+            # Discard the padding from the output
+            return out[..., : self.output_dim]
 
 
 class NGPField(torch.nn.Module):
@@ -185,7 +203,11 @@ class NGPField(torch.nn.Module):
         # FullyFusedMLP only supports certain widths.
         ff_supported_widths = [16, 32, 64, 128]
         otype = "FullyFusedMLP" if width in ff_supported_widths else "CutlassMLP"
-
+        # Print all arguments for debugging
+        print(f"Using {otype} for width {width}")
+        print(
+            f"Encoding config: {self.encoding_config}, n_input_dims: {self.num_dim}, n_output_dims: {self.mlp_base_out_dim}"
+        )
         return tcnn.NetworkWithInputEncoding(
             n_input_dims=self.num_dim,
             n_output_dims=self.mlp_base_out_dim,
