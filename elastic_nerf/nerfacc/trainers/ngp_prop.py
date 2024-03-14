@@ -210,10 +210,11 @@ class NGPPropTrainer(NGPTrainer):
         proposal_networks=None,
         **kwargs,
     ):
-        rgb, acc, depth, extras = render_image_with_propnet(
-            self.radiance_field,
-            self.proposal_networks,
-            self.estimator,
+        # Returns rgb, acc, depth, extras
+        return render_image_with_propnet(
+            self.radiance_field if radiance_field is None else radiance_field,
+            self.proposal_networks if proposal_networks is None else proposal_networks,
+            self.estimator if estimator is None else estimator,
             rays,
             # rendering options
             num_samples=self.dataset.num_samples,
@@ -227,7 +228,6 @@ class NGPPropTrainer(NGPTrainer):
             test_chunk_size=self.dataset.test_chunk_size,
             **kwargs,
         )
-        return rgb, acc, depth, extras
 
     def train_granular_step(
         self,
@@ -347,4 +347,3 @@ class NGPPropTrainer(NGPTrainer):
         self.frozen["estimator"] = copy.deepcopy(self.estimator)
         self.frozen["radiance_field"] = copy.deepcopy(self.radiance_field)
         self.frozen["proposal_networks"] = copy.deepcopy(self.proposal_networks)
-
