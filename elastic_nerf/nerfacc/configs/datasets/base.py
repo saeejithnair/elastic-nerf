@@ -29,23 +29,6 @@ from torchmetrics.functional import structural_similarity_index_measure
 from tyro.extras._serialization import to_yaml, from_yaml
 import copy
 import wandb
-from elastic_nerf.nerfacc.datasets.nerf_360_v2 import SubjectLoader as MipNerf360Loader
-from elastic_nerf.nerfacc.datasets.nerf_synthetic import (
-    SubjectLoader as BlenderSyntheticLoader,
-)
-from elastic_nerf.nerfacc.radiance_fields.ngp import (
-    NGPRadianceField,
-    NGPRadianceFieldConfig,
-)
-from elastic_nerf.nerfacc.utils import (
-    NERF_SYNTHETIC_SCENES,
-    render_image_with_occgrid,
-    set_random_seed,
-)
-from elastic_nerf.utils import logging_utils as lu
-
-set_random_seed(42)
-
 
 @dataclass
 class NGPBaseDatasetConfig(PrintableConfig):

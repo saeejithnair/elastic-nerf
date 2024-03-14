@@ -42,7 +42,6 @@ from elastic_nerf.nerfacc.radiance_fields.ngp import (
 from elastic_nerf.nerfacc.utils import (
     NERF_SYNTHETIC_SCENES,
     render_image_with_occgrid,
-    set_random_seed,
 )
 from elastic_nerf.utils import logging_utils as lu
 from elastic_nerf.nerfacc.trainers.base import NGPBaseTrainerConfig, NGPTrainer
@@ -57,9 +56,6 @@ from elastic_nerf.nerfacc.configs.datasets.blender import (
 from elastic_nerf.nerfacc.configs.datasets.mipnerf360 import (
     MipNerf360DatasetOccConfig,
 )
-
-set_random_seed(42)
-
 
 class NGPOccTrainerConfig(NGPBaseTrainerConfig):
     """Configurations for training the model."""

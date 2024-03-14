@@ -6,12 +6,7 @@ Copyright (c) 2022 Ruilong Li, UC Berkeley.
 import tyro
 from nerfstudio.configs.config_utils import convert_markup_to_ansi
 import wandb
-from elastic_nerf.nerfacc.utils import (
-    set_random_seed,
-)
 from elastic_nerf.nerfacc.trainers.ngp_occ import NGPOccTrainer, NGPOccTrainerConfig
-
-set_random_seed(42)
 
 
 def main(config: NGPOccTrainerConfig):

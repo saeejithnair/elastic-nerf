@@ -58,8 +58,6 @@ from elastic_nerf.nerfacc.configs.datasets.mipnerf360 import (
     MipNerf360DatasetPropConfig,
 )
 
-set_random_seed(42)
-
 
 @dataclass
 class NGPBaseTrainerConfig(PrintableConfig):
@@ -157,6 +155,8 @@ class NGPTrainer:
         self.device = torch.device(config.device)
 
     def setup(self):
+        set_random_seed(42)
+
         # Set up the training and testing datasets
         self.train_dataset, self.test_dataset = self.setup_datasets()
 

@@ -42,7 +42,6 @@ from elastic_nerf.nerfacc.radiance_fields.ngp import (
 from elastic_nerf.nerfacc.utils import (
     NERF_SYNTHETIC_SCENES,
     render_image_with_propnet,
-    set_random_seed,
 )
 from elastic_nerf.nerfacc.configs.datasets.base import NGPPropDatasetConfig
 
@@ -53,8 +52,6 @@ from elastic_nerf.nerfacc.configs.datasets.mipnerf360 import (
     MipNerf360DatasetPropConfig,
 )
 from elastic_nerf.nerfacc.trainers.base import NGPBaseTrainerConfig, NGPTrainer
-
-set_random_seed(42)
 
 
 @dataclass
