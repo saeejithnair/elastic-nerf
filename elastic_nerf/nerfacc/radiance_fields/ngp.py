@@ -216,7 +216,7 @@ class ElasticMLPWithInputEncoding(torch.nn.Module):
         self.encoding = tcnn.Encoding(
             n_input_dims=input_dim, encoding_config=encoding_config
         )
-        self.align_inputs = align_inputs
+        # self.align_inputs = align_inputs
         # self.align_outputs = align_outputs
 
         # Pad the input dim (the output from the encoding) to the next highest multiple of 16.
@@ -241,29 +241,42 @@ class ElasticMLPWithInputEncoding(torch.nn.Module):
         )
 
     def get_packed_weights(self):
+        input_layer_padded = self.pad_input_to_16(
+            self.elastic_mlp.hidden_layers[0].weight.data, value=0
+        )
         output_layer_padded = self.pad_output_to_16(
-            self.elastic_mlp.output_layer.weight.data
+            self.elastic_mlp.output_layer.weight.data, value=0
         )
         params = torch.cat(
             [
                 self.encoding.params.data.flatten(),
-                self.elastic_mlp.hidden_layers[0].weight.data.flatten(),
+                input_layer_padded.flatten(),
                 output_layer_padded.flatten(),
             ]
-        ).half()
+        )
         return params
 
-    def pad_output_to_16(self, tensor):
-        """Pad the output tensor to the next highest multiple of 16 with 0s"""
-        output_dim = tensor.shape[0]
-        pad_size = (16 - (output_dim % 16)) % 16
-        return nn.functional.pad(tensor, pad=(0, 0, 0, pad_size))
+    # def pad_output_to_16(self, tensor, value):
+    #     """Pad the output tensor to the next highest multiple of 16 with 0s"""
+    #     output_dim = tensor.shape[0]
+    #     pad_size = (16 - (output_dim % 16)) % 16
+    #     return nn.functional.pad(tensor, pad=(0, 0, 0, pad_size), value=value)
 
-    def pad_input_to_16(self, tensor):
-        """Pad the input tensor to the next highest multiple of 16 with 1s."""
+    # def pad_input_to_16(self, tensor, value):
+    #     """Pad the input tensor to the next highest multiple of 16 with 0s."""
+    #     output_dim = tensor.shape[1]
+    #     pad_size = (16 - (output_dim % 16)) % 16
+    #     return nn.functional.pad(tensor, pad=(0, pad_size, 0, 0), value=value)
+
+    def pad_input_to_16(self, tensor, value=0, block_size=16):
         output_dim = tensor.shape[1]
-        pad_size = (16 - (output_dim % 16)) % 16
-        return nn.functional.pad(tensor, pad=(0, pad_size, 0, 0), value=1)
+        pad_size = (block_size - (output_dim % block_size)) % block_size
+        return nn.functional.pad(tensor, pad=(0, pad_size), value=value)
+
+    def pad_output_to_16(self, tensor, value=0, block_size=16):
+        output_dim = tensor.shape[0]
+        pad_size = (block_size - (output_dim % block_size)) % block_size
+        return nn.functional.pad(tensor, pad=(0, 0, 0, pad_size), value=value)
 
     def forward(
         self, x: torch.Tensor, active_neurons: Optional[int] = None
@@ -277,9 +290,7 @@ class ElasticMLPWithInputEncoding(torch.nn.Module):
             # Pad the output of the encoding with ones to the next
             # highest multiple of 16. Padding with 1 helps the first
             # layer of the network implicitly learn a bias term.
-            if self.align_inputs:
-                x = self.pad_input_to_16(x)
-                print(x.shape)
+            # x = self.pad_input_to_16(x)
 
             return self.elastic_mlp(x, **kwargs)
 
