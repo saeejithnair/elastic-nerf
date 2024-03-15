@@ -6,9 +6,10 @@ import numpy as np
 import tinycudann as tcnn
 import torch
 from elastic_nerf.nerfacc.radiance_fields.ngp import pack_weights
+from torch.cuda.amp.autocast_mode import autocast
 
 # %%
-run_id = "kx5mcllz"
+run_id = "2024-03-14-20-50-27"
 results_cache_dir = Path("/home/user/shared/results/elastic-nerf")
 log_dir = Path("/home/user/shared/results/elastic-nerf") / run_id
 wandb_dir = Path("/home/user/shared/wandb_cache/elastic-nerf") / run_id
@@ -16,9 +17,34 @@ config = sdp.get_config(run_id, results_cache_dir)
 checkpoints = sdp.get_checkpoints(run_id, results_cache_dir)
 
 trainer = NGPPropTrainer.load_trainer(config, log_dir=log_dir, wandb_dir=wandb_dir)
-# trainer.config.model_path = checkpoints[20000]
-# trainer.load_checkpoint()
+trainer.config.model_path = checkpoints[20000]
+trainer.load_checkpoint()
 
+# %%
+rad_mlp = trainer.radiance_field.mlp_base
+trainer.radiance_field.load_fused(64)
+ff = trainer.radiance_field.mlp_base
+# %%
+input = torch.randn((100, 3))
+device = torch.device("cuda:0")
+rad_mlp = rad_mlp.to(device)
+ff = ff.to(device)
+input = input.to(device)
+# %%
+with autocast():
+    x = rad_mlp.encoding(input)
+    dims_to_pad = (x.shape[-1] + 15) // 16 * 16
+    print(x.shape, dims_to_pad)
+    tmp = torch.nn.functional.pad(
+        x, (0, dims_to_pad - x.shape[-1]), value=rad_mlp.pad_value
+    )
+    out = rad_mlp.elastic_mlp(tmp)
+
+ff_out = ff(input)
+print(out.shape, ff_out.shape)
+print(torch.allclose(out, ff_out, atol=1e-6))
+print(out)
+print(ff_out)
 # %%
 # model = trainer.radiance_field
 model = trainer.proposal_networks[1]

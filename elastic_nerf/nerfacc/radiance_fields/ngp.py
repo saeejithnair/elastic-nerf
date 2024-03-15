@@ -72,16 +72,51 @@ def contract_to_unisphere(
         return x
 
 
+# def pack_weights(model):
+#     # List to hold all the weights and biases
+#     all_weights = []
+
+#     # Loop through each layer and extract weights and biases
+#     for name, param in model.named_parameters():
+#         # Flatten then add to the list
+#         all_weights.append(param.data.cpu().flatten())
+
+#     # Concatenate all the weights and biases into a single buffer
+#     packed_weights = torch.concatenate(all_weights)
+
+#     return packed_weights
+
+
+def flatten_fortran_w_clone(t):
+    nt = t.clone()
+    nt = nt.set_(
+        nt.storage(), nt.storage_offset(), nt.size(), tuple(reversed(nt.stride()))
+    )
+    return nt.flatten()
+
+
 def pack_weights(model):
-    # List to hold all the weights and biases
+    # List to hold all the weights
     all_weights = []
 
-    # Loop through each layer and extract weights and biases
+    # Loop through each layer and extract weights
     for name, param in model.named_parameters():
-        # Flatten then add to the list
-        all_weights.append(param.data.cpu().flatten())
-
-    # Concatenate all the weights and biases into a single buffer
+        # Check if the parameter is a weight matrix and needs transposition
+        # if "hidden_layer" in name:
+        #     # Transpose the weight matrix to switch from row-major to column-major
+        #     weight = param.data.cpu().flatten()
+        #     # weight = param.data.cpu().t().contiguous()  # Transpose operation
+        # elif "encoding" in name:
+        #     # For the encoding, we need to flatten and add to the list
+        #     weight = torch.flip(param.data.cpu().flatten(), [0])
+        # else:
+        #     # For biases and other parameters, just flatten and add to the list
+        #     weight = torch.flip(param.data.cpu().flatten(), [0])
+        weight = param.data.to(memory_format=torch.channels_last).cpu().flatten()
+        # weight = flatten_fortran_w_clone(param.data.cpu())
+        all_weights.append(weight)
+        print(f"{name}: {weight.shape}, {all_weights[-1].shape}")
+    # Concatenate all the weights into a single buffer
     packed_weights = torch.concatenate(all_weights)
 
     return packed_weights
@@ -95,7 +130,7 @@ class NGPRadianceFieldConfig(InstantiateConfig):
 
     use_elastic: bool = False
     """Whether to use an elastic MLP."""
-    pad_val: int = 0
+    pad_val: int = 1
     """Value to use for padding encoder output."""
     align_inputs: bool = False
     """Whether to align the input dimensions to the next highest multiple of 16."""
@@ -144,7 +179,7 @@ class NGPDensityFieldConfig(InstantiateConfig):
 
     use_elastic: bool = False
     """Whether to use an elastic MLP."""
-    pad_val: int = 0
+    pad_val: int = 1
     """Value to use for padding encoder output."""
     align_inputs: bool = False
     """Whether to align the input dimensions to the next highest multiple of 16."""
@@ -189,23 +224,27 @@ class ElasticMLPWithInputEncoding(torch.nn.Module):
         # Pad the input dim (the output from the encoding) to the next highest multiple of 16.
         # This is because for FullyFused, the TensorCores operate on 16x16 matrix chunks.
         if align_inputs:
-            self.mlp_input_dim = (self.encoding.n_output_dims + 15) // 16 * 16
+            pad_size = (16 - (self.encoding.n_output_dims % 16)) % 16
+            self.mlp_input_dim = self.encoding.n_output_dims + pad_size
         else:
             self.mlp_input_dim = self.encoding.n_output_dims
 
-        if align_outputs:
-            mlp_out_dim = (output_dim + 15) // 16 * 16
-        else:
-            mlp_out_dim = output_dim
+        # if align_outputs:
+        #     mlp_out_dim = (output_dim + 15) // 16 * 16
+        # else:
+        #     mlp_out_dim = output_dim
         self.output_dim = output_dim
         self.elastic_mlp: ElasticMLP = elastic_mlp.setup(
             input_dim=self.mlp_input_dim,
-            output_dim=mlp_out_dim,
+            output_dim=output_dim,
             net_depth=net_depth,
             net_width=net_width,
             skip_layer=None,
             output_enabled=True,
         )
+
+    def get_packed_weights(self):
+        pass
 
     def forward(
         self, x: torch.Tensor, active_neurons: Optional[int] = None
@@ -220,15 +259,18 @@ class ElasticMLPWithInputEncoding(torch.nn.Module):
             # highest multiple of 16. Padding with 1 helps the first
             # layer of the network implicitly learn a bias term.
             if self.align_inputs:
-                dims_to_pad = (x.shape[-1] + 15) // 16 * 16
-                x = torch.nn.functional.pad(
-                    x, (0, dims_to_pad - x.shape[-1]), value=self.pad_value
-                )
+                pad_size = (16 - (x.shape[-1] % 16)) % 16
+                # dims_to_pad = (x.shape[-1] + 15) // 16 * 16
+                x = torch.nn.functional.pad(x, pad=(0, pad_size), value=self.pad_value)
             out = self.elastic_mlp(x, **kwargs)
 
-            if self.align_outputs:
-                # Discard the padding from the output
-                out = out[..., : self.output_dim]
+            # if self.align_outputs:
+            #     # Discard the padding from the output
+            #     # orig_shape = out.shape
+            #     out = out[..., : self.output_dim]
+            #     # print(
+            #     #     f"Discarding padding from the output: {orig_shape} -> {out.shape}; {out.dtype}"
+            #     # )
 
             return out
 
