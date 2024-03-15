@@ -124,10 +124,6 @@ def make_encoding_config(
     return encoding_config
 
 
-# %%
-# Test Encoder
-
-
 # %% Test ElasticMLP
 def test_network(input_dim, output_dim, net_depth=1, net_width=64):
     # Create TCNN network
@@ -182,6 +178,188 @@ def test_network(input_dim, output_dim, net_depth=1, net_width=64):
 
 test_network(input_dim=16, output_dim=1)
 test_network(input_dim=10, output_dim=1)
+
+# %%
+input_dim = 3
+output_dim = 1
+mlp_out_dim = 1
+mlp_in_dim = 10
+net_width = 64
+net_depth = 1
+# elastic_mlp_config = ElasticMLPConfig(output_activation=None, bias_enabled=False)
+# encoding_config = make_encoding_config()
+
+# network_config = make_network_config()
+# tcnn_network_with_encoding = tcnn.NetworkWithInputEncoding(
+#     n_input_dims=input_dim,
+#     n_output_dims=mlp_out_dim,
+#     encoding_config=encoding_config,
+#     network_config=network_config,
+# )
+# torch_network_with_encoding: ElasticMLPWithInputEncoding = ElasticMLPWithInputEncoding(
+#     input_dim=input_dim,
+#     output_dim=mlp_out_dim,
+#     encoding_config=encoding_config,
+#     elastic_mlp=elastic_mlp_config,
+#     align_inputs=True,
+# ).cuda()
+# packed_weights = torch_network_with_encoding.get_packed_weights().half()
+# tcnn_network_with_encoding.params.data[...] = packed_weights
+
+# input = make_input(input_dim)
+# assert compare_outputs(torch_network_with_encoding, tcnn_network_with_encoding, input)
+
+# Create encoder
+encoding_config = make_encoding_config()
+tcnn_encoder = tcnn.Encoding(input_dim, encoding_config)
+
+# Create networks
+# Torch MLP
+input_dim_padded = (mlp_in_dim + 15) // 16 * 16
+elastic_mlp_config = ElasticMLPConfig(output_activation=None, bias_enabled=False)
+print(f"Input dim padded from {mlp_in_dim} to {input_dim_padded}")
+torch_mlp: ElasticMLP = (
+    elastic_mlp_config.setup(
+        input_dim=input_dim_padded,
+        output_dim=output_dim,
+        net_depth=net_depth,
+        net_width=net_width,
+        skip_layer=None,
+        output_enabled=True,
+    )
+    .half()
+    .cuda()
+)
+print(torch_mlp)
+output_layer_padded = pad_output_to_16(torch_mlp.output_layer.weight.data)
+print(
+    f"Padded from {torch_mlp.output_layer.weight.data.shape} to {output_layer_padded.shape}"
+)
+torch_mlp_packed_weights = (
+    torch.cat(
+        [
+            torch_mlp.hidden_layers[0].weight.data.flatten(),
+            output_layer_padded.flatten(),
+        ]
+    )
+    .half()
+    .cuda()
+)
+
+# TCNN MLP
+network_config = make_network_config()
+tcnn_mlp = tcnn.Network(
+    n_input_dims=mlp_in_dim, n_output_dims=output_dim, network_config=network_config
+)
+tcnn_mlp.params.data[...] = torch_mlp_packed_weights
+
+# Make standard input and then pad
+input = make_input(input_dim).cuda().half()
+input_clone = input.clone()
+encoded_input = tcnn_encoder(input)
+print(f"Encoded input shape: {encoded_input.shape}")
+
+# TCNN MLP with Encoding
+tcnn_network_with_encoding = tcnn.NetworkWithInputEncoding(
+    n_input_dims=input_dim,
+    n_output_dims=mlp_out_dim,
+    encoding_config=encoding_config,
+    network_config=network_config,
+)
+torch_mlp_with_encoding_packed_weights = (
+    (
+        torch.cat(
+            [
+                tcnn_encoder.params.data.flatten(),
+                torch_mlp.hidden_layers[0].weight.data.flatten(),
+                output_layer_padded.flatten(),
+            ]
+        )
+    )
+    .half()
+    .cuda()
+)
+tcnn_network_with_encoding.params.data[...] = torch_mlp_with_encoding_packed_weights
+
+# TCNN output
+tcnn_mlp_output = tcnn_mlp(encoded_input)
+
+# Torch output
+encoded_input_padded = pad_input_to_16(encoded_input)
+torch_mlp_output = torch_mlp(encoded_input_padded)
+
+# TCNN Network with Encoding output
+tcnn_mlp_with_encoding_output = tcnn_network_with_encoding(input_clone)
+
+# Compare outputs
+torch.allclose(torch_mlp_output, tcnn_mlp_output, rtol=0.01, atol=0.01)
+torch.allclose(torch_mlp_output, tcnn_mlp_with_encoding_output, rtol=0.01, atol=0.01)
+
+
+# %%
+# Test NetworkWithInputEncoding / ElasticMLPWithInputEncoding
+def test_network_with_input_encoding(input_dim, mlp_out_dim, net_depth=1, net_width=64):
+    # Create TCNN network
+    network_config = make_network_config()
+    encoding_config = make_encoding_config()
+    elastic_tcnn = tcnn.NetworkWithInputEncoding(
+        n_input_dims=input_dim,
+        n_output_dims=mlp_out_dim,
+        encoding_config=encoding_config,
+        network_config=network_config,
+    )
+
+    # Create ElasticMLP (un-aligned pytorch)
+    elastic_mlp_config = ElasticMLPConfig(output_activation=None, bias_enabled=False)
+    elastic_torch: ElasticMLPWithInputEncoding = ElasticMLPWithInputEncoding(
+        input_dim=input_dim,
+        output_dim=mlp_out_dim,
+        encoding_config=encoding_config,
+        elastic_mlp=elastic_mlp_config,
+        align_inputs=True,
+    ).cuda()
+
+    tcnn_params = elastic_torch.get_packed_weights().half()
+    elastic_tcnn.params.data[...] = tcnn_params
+
+    input = make_input(input_dim)
+    assert compare_outputs(elastic_torch, elastic_tcnn, input)
+
+    # # Now try to figure out how we can make it work by aligning inputs and outputs
+    # input_dim_padded = (input_dim + 15) // 16 * 16
+    # elastic_torch: ElasticMLPWithInputEncoding = ElasticMLPWithInputEncoding(
+    #     input_dim=input_dim_padded,
+    #     output_dim=output_dim,
+    #     encoding_config=encoding_config,
+    #     elastic_mlp=elastic_mlp_config,
+    #     pad_value=1,
+    #     align_inputs=True,
+    #     align_outputs=False,
+    # ).cuda()
+    # output_layer_padded = pad_output_to_16(
+    #     elastic_torch.elastic_mlp.output_layer.weight.data
+    # )
+
+    # # Make standard input and then pad
+    # input = make_input(input_dim).cuda().half()
+    # # For inputs, pad along the feature dimension (not batch)
+    # input_padded = pad_input_to_16(input)
+    # params = torch.cat(
+    #     [
+    #         elastic_torch.encoding.params.data.flatten(),
+    #         elastic_torch.elastic_mlp.hidden_layers[0].weight.data.flatten(),
+    #         output_layer_padded.flatten(),
+    #     ]
+    # ).half()
+    # elastic_tcnn.params.data[...] = params
+    # elastic_tcnn = elastic_tcnn.half().cuda()
+    # elastic_torch = elastic_torch.half().cuda()
+    # output_torch = elastic_torch(input_padded)
+    # output_tcnn = elastic_tcnn(input)
+    # assert torch.allclose(output_torch, output_tcnn, rtol=0.01, atol=0.01)
+
+
+test_network_with_input_encoding(input_dim=3, mlp_out_dim=1)
 # %%
 elastic_torch = ElasticMLPWithInputEncoding(
     input_dim=encoding_input_dim,
