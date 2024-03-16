@@ -597,6 +597,7 @@ class NGPTrainer:
         self.set_mode(train=False)
 
         modules_for_eval = self.get_modules_for_eval(elastic_width)
+        print(f"Evaluating with elastic width {elastic_width}...")
 
         for i in tqdm.tqdm(
             range(len(self.test_dataset)), desc="Test Dataset", leave=True
