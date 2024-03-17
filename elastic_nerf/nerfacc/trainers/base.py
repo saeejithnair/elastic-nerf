@@ -512,7 +512,7 @@ class NGPTrainer:
                 if p.grad is not None
             }
             file_path = checkpoints_dir / f"{name}_step_{self.step}.pt"
-            process = lu.async_robust_torch_save(
+            process = lu.robust_torch_save(
                 {"step": self.step, "params": params, "gradients": gradients}, file_path
             )
             self.logging_processes.append(process)
@@ -534,7 +534,7 @@ class NGPTrainer:
         for name, model in self.models_to_watch.items():
             save_dict[f"{name}_state_dict"] = model.state_dict()
 
-        process = lu.async_robust_torch_save(save_dict, checkpoint_fp)
+        process = lu.robust_torch_save(save_dict, checkpoint_fp)
         self.logging_processes.append(process)
 
     def get_elastic_forward_kwargs(self, elastic_width, eval=False):
