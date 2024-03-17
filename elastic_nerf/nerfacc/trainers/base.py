@@ -110,8 +110,10 @@ class NGPBaseTrainerConfig(PrintableConfig):
     """Number of iterations after which to save a checkpoint."""
     num_log_steps: int = 5000
     """Number of iterations after which to log training information."""
-    num_weights_grads_steps: int = 500
+    num_weights_grads_steps: int = 2000
     """Number of iterations after which to log weights and gradients."""
+    weights_grads_warmup: int = 1000
+    """Number of iterations to wait before logging weights and gradients less frequently."""
     radiance_field: NGPRadianceFieldConfig = field(
         default_factory=lambda: NGPRadianceFieldConfig()
     )
@@ -293,6 +295,7 @@ class NGPTrainer:
         ]
         self.start_time = time.time()
         self.logging_processes = []
+        self.num_weights_grads_steps = 10
 
     def setup_datasets(self, num_rays_scaler: int = 1):
         """Setup training and testing datasets."""
@@ -512,10 +515,10 @@ class NGPTrainer:
                 if p.grad is not None
             }
             file_path = checkpoints_dir / f"{name}_step_{self.step}.pt"
-            process = lu.robust_torch_save(
+            lu.robust_torch_save(
                 {"step": self.step, "params": params, "gradients": gradients}, file_path
             )
-            self.logging_processes.append(process)
+        print(f"Saved weights and gradients at step {self.step} to {checkpoints_dir}")
 
     def log_checkpoint(self):
         # Log checkpoint asynchronously.
@@ -534,8 +537,8 @@ class NGPTrainer:
         for name, model in self.models_to_watch.items():
             save_dict[f"{name}_state_dict"] = model.state_dict()
 
-        process = lu.robust_torch_save(save_dict, checkpoint_fp)
-        self.logging_processes.append(process)
+        lu.robust_torch_save(save_dict, checkpoint_fp)
+        print(f"Saved checkpoint at step {self.step} to {checkpoint_fp}")
 
     def get_elastic_forward_kwargs(self, elastic_width, eval=False):
         raise NotImplementedError
@@ -753,7 +756,8 @@ class NGPTrainer:
             total=self.config.max_steps + 1, desc="Training Steps", leave=True
         )
         self.total_train_time = 0
-        for step in range(self.step, self.config.max_steps):
+        start_step = self.step
+        for step in range(start_step, self.config.max_steps):
             # Perform a single training step and increment self.step.
             train_start = time.time()
             metrics_dict, gradient_updated = self.train_step()
@@ -767,9 +771,21 @@ class NGPTrainer:
                 # updated because loss was 0.
                 self.log_metrics(metrics_dict, commit=False)
 
-            if self.step_check(self.step, self.config.num_weights_grads_steps):
+            if self.step_check(self.step, self.num_weights_grads_steps):
                 # Log weights and gradients at specified intervals.
                 self.log_weights_and_gradients()
+
+                if self.step < self.config.weights_grads_warmup:
+                    if self.step < 100:
+                        self.num_weights_grads_steps = 10
+                    elif self.step < 500:
+                        self.num_weights_grads_steps = 50
+                    elif self.step < 1000:
+                        self.num_weights_grads_steps = 100
+                    else:
+                        self.num_weights_grads_steps = 500
+                elif self.step == self.config.weights_grads_warmup:
+                    self.num_weights_grads_steps = self.config.num_weights_grads_steps
 
             if self.step_check(self.step, self.config.num_checkpoint_steps):
                 # Save a checkpoint at specified intervals.
