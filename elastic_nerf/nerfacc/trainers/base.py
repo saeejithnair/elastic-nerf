@@ -439,6 +439,9 @@ class NGPTrainer:
             ), f"axis_value must be provided for axis_key: {axis_key}"
             log_dict[axis_key] = axis_value
 
+        if mode == "Train":
+            log_dict.update({"Train/total_time": float(self.total_train_time)})
+
         wandb.log(log_dict, step=self.step, commit=commit)
 
     def preprocess_image(self, image):
@@ -518,7 +521,7 @@ class NGPTrainer:
             lu.robust_torch_save(
                 {"step": self.step, "params": params, "gradients": gradients}, file_path
             )
-        print(f"Saved weights and gradients at step {self.step} to {checkpoints_dir}")
+            print(f"Saved weights and gradients at step {self.step} to {file_path}")
 
     def log_checkpoint(self):
         # Log checkpoint asynchronously.
@@ -763,14 +766,6 @@ class NGPTrainer:
             metrics_dict, gradient_updated = self.train_step()
             self.total_train_time += time.time() - train_start
 
-            if (
-                self.step_check(self.step, self.config.num_log_steps)
-                or not gradient_updated
-            ):
-                # Log metrics at specified intervals or if gradient was not
-                # updated because loss was 0.
-                self.log_metrics(metrics_dict, commit=False)
-
             if self.step_check(self.step, self.num_weights_grads_steps):
                 # Log weights and gradients at specified intervals.
                 self.log_weights_and_gradients()
@@ -802,9 +797,14 @@ class NGPTrainer:
             if self.step_check(self.step, self.config.num_eval_all_steps):
                 self.eval()
 
-            wandb.log(
-                {"Train/total_time": float(self.total_train_time)}, step=self.step
-            )
+            if (
+                self.step_check(self.step, self.config.num_log_steps)
+                or not gradient_updated
+            ):
+                # Log metrics at specified intervals or if gradient was not
+                # updated because loss was 0.
+                self.log_metrics(metrics_dict, commit=True)
+
             self.step += 1
 
         pbar.close()
@@ -813,7 +813,7 @@ class NGPTrainer:
         self.log_weights_and_gradients()
         self.log_checkpoint()
         self.eval()
-        wandb.log({}, step=self.step)
+        wandb.log({}, step=self.step, commit=True)
 
     def get_train_data(self):
         data = self.train_dataset[
