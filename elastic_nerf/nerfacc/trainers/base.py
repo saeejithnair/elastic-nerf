@@ -108,7 +108,7 @@ class NGPBaseTrainerConfig(PrintableConfig):
     """Number of iterations after which to perform evaluation during training."""
     num_checkpoint_steps: int = 5000
     """Number of iterations after which to save a checkpoint."""
-    num_log_steps: int = 5000
+    num_log_steps: int = 1000
     """Number of iterations after which to log training information."""
     num_weights_grads_steps: int = 2000
     """Number of iterations after which to log weights and gradients."""
