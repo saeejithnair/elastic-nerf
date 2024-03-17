@@ -80,10 +80,6 @@ class MipNerf360DatasetOccConfig(NGPOccDatasetConfig):
 class MipNerf360DatasetPropConfig(NGPPropDatasetConfig):
     """Dataset/scene specific configurations for Mip-NeRF 360 dataset."""
 
-    subject_loader: Type[MipNerf360Loader] = field(
-        default_factory=lambda: MipNerf360Loader
-    )
-    """The subject loader."""
     data_root: Path = field(
         default_factory=lambda: Path(os.environ["NERFSTUDIO_CACHE_DIR"]) / "data/360_v2"
     )

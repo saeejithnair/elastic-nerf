@@ -47,10 +47,6 @@ class BlenderSyntheticDatasetOccConfig(NGPOccDatasetConfig):
 class BlenderSyntheticDatasetPropConfig(NGPPropDatasetConfig):
     """Dataset/scene specific configurations for Blender Synthetic dataset."""
 
-    subject_loader: Type[BlenderSyntheticLoader] = field(
-        default_factory=lambda: BlenderSyntheticLoader
-    )
-    """The subject loader."""
     data_root: Path = field(
         default_factory=lambda: Path(os.environ["NERFSTUDIO_CACHE_DIR"])
         / "data/blender"
@@ -65,6 +61,9 @@ class BlenderSyntheticDatasetPropConfig(NGPPropDatasetConfig):
         self.weight_decay = (
             1e-5 if self.scene in ["materials", "ficus", "drums"] else 1e-6
         )
+
+    def setup(self, **kwargs) -> BlenderSyntheticLoader:
+        return BlenderSyntheticLoader(**kwargs)
 
     def download(self):
         download_dataset(self.data_root.parent)

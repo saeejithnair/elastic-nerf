@@ -83,19 +83,6 @@ def make_input(input_dim, batch_size=128):
     return torch.randn(batch_size, input_dim).cuda()
 
 
-# def pad_output_to_16(tensor, value=0, block_size=16):
-#     output_dim = tensor.shape[0]
-#     pad_size = (block_size - (output_dim % block_size)) % block_size
-#     return nn.functional.pad(tensor, pad=(0, 0, 0, pad_size))
-
-
-# def pad_input_to_16(tensor, value=0, block_size=16):
-#     output_dim = tensor.shape[1]
-#     pad_size = (block_size - (output_dim % block_size)) % block_size
-#     # return nn.functional.pad(tensor, pad=(0, pad_size, 0, 0), value=value)
-#     return nn.functional.pad(input, pad=(0, pad_size))
-
-
 def pad_input_to_16(tensor, value=0, block_size=16):
     output_dim = tensor.shape[1]
     pad_size = (block_size - (output_dim % block_size)) % block_size
@@ -107,12 +94,6 @@ def pad_output_to_16(tensor, value=0, block_size=16):
     output_dim = tensor.shape[0]
     pad_size = (block_size - (output_dim % block_size)) % block_size
     return nn.functional.pad(tensor, pad=(0, 0, 0, pad_size), value=value)
-
-
-# input_dim = 16
-# output_dim = 1
-# batch_size = 128
-# encoding_input_dim = 3
 
 
 def make_network_config(net_width=64, net_depth=1):
@@ -207,28 +188,6 @@ mlp_out_dim = 1
 mlp_in_dim = 10
 net_width = 64
 net_depth = 1
-# elastic_mlp_config = ElasticMLPConfig(output_activation=None, bias_enabled=False)
-# encoding_config = make_encoding_config()
-
-# network_config = make_network_config()
-# tcnn_network_with_encoding = tcnn.NetworkWithInputEncoding(
-#     n_input_dims=input_dim,
-#     n_output_dims=mlp_out_dim,
-#     encoding_config=encoding_config,
-#     network_config=network_config,
-# )
-# torch_network_with_encoding: ElasticMLPWithInputEncoding = ElasticMLPWithInputEncoding(
-#     input_dim=input_dim,
-#     output_dim=mlp_out_dim,
-#     encoding_config=encoding_config,
-#     elastic_mlp=elastic_mlp_config,
-#     align_inputs=True,
-# ).cuda()
-# packed_weights = torch_network_with_encoding.get_packed_weights().half()
-# tcnn_network_with_encoding.params.data[...] = packed_weights
-
-# input = make_input(input_dim)
-# assert compare_outputs(torch_network_with_encoding, tcnn_network_with_encoding, input)
 
 # Create encoder
 encoding_config = make_encoding_config()
@@ -248,7 +207,7 @@ torch_mlp: ElasticMLP = elastic_mlp_config.setup(
     skip_layer=None,
     output_enabled=True,
 ).cuda()
-
+init_params(torch_mlp)
 # TCNN MLP
 network_config = make_network_config()
 tcnn_mlp = tcnn.Network(
@@ -263,7 +222,6 @@ torch_mlp_with_encoding: ElasticMLPWithInputEncoding = ElasticMLPWithInputEncodi
     elastic_mlp=elastic_mlp_config,
     # align_inputs=True,
 ).cuda()
-init_params(torch_mlp_with_encoding)
 
 # TCNN MLP with Encoding
 tcnn_network_with_encoding = tcnn.NetworkWithInputEncoding(
@@ -316,27 +274,34 @@ torch_mlp_with_encoding.elastic_mlp.hidden_layers[0].weight.data[...] = (
 torch_mlp_with_encoding.elastic_mlp.output_layer.weight.data[...] = (
     torch_mlp.output_layer.weight.data[...]
 )
-torch_mlp_with_encoding_packed_weights = (
-    torch_mlp_with_encoding.get_packed_weights().cuda().half()
-)
-input_layer_padded = pad_input_to_16(
-    torch_mlp_with_encoding.elastic_mlp.hidden_layers[0].weight.data, value=0
-).half()
-output_layer_padded = pad_output_to_16(
-    torch_mlp_with_encoding.elastic_mlp.output_layer.weight.data
-)
+# torch_mlp_with_encoding_packed_weights = (
+#     torch_mlp_with_encoding.get_packed_weights().cuda().half()
+# )
 
-torch_mlp_with_encoding_packed_weights_manual = (
-    torch.cat(
-        [
-            torch_mlp_with_encoding.encoding.params.data.flatten(),
-            input_layer_padded.flatten(),
-            output_layer_padded.flatten(),
-        ]
-    )
-    .cuda()
-    .half()
-)
+input_layer_padded = nn.functional.pad(
+    torch_mlp_with_encoding.elastic_mlp.hidden_layers[0].weight.data.t(),
+    pad=(0, 0, 6, 0),
+    value=0,
+).half()
+output_layer_padded = nn.functional.pad(
+    torch_mlp_with_encoding.elastic_mlp.output_layer.weight.data.t(),
+    pad=(15, 0, 0, 0),
+    value=0,
+).half()
+# input_layer_padded = pad_input_to_16(
+#     torch_mlp_with_encoding.elastic_mlp.hidden_layers[0].weight.data, value=0
+# ).half()
+# output_layer_padded = pad_output_to_16(
+#     torch_mlp_with_encoding.elastic_mlp.output_layer.weight.data
+# )
+
+torch_mlp_with_encoding_packed_weights_manual = torch.cat(
+    [
+        torch_mlp_with_encoding.encoding.params.data.flatten(),
+        input_layer_padded.data.flatten(),
+        output_layer_padded.data.flatten(),
+    ]
+).cuda()
 tcnn_network_with_encoding.params.data[...] = (
     torch_mlp_with_encoding_packed_weights_manual
 )
