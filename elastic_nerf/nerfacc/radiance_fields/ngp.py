@@ -131,12 +131,6 @@ class NGPRadianceFieldConfig(InstantiateConfig):
 
     use_elastic: bool = False
     """Whether to use an elastic MLP."""
-    # pad_val: int = 1
-    # """Value to use for padding encoder output."""
-    # align_inputs: bool = False
-    # """Whether to align the input dimensions to the next highest multiple of 16."""
-    # align_outputs: bool = False
-    # """Whether to align the output dimensions to the next highest multiple of 16."""
     base: ElasticMLPConfig = field(
         default_factory=lambda: ElasticMLPConfig(
             output_activation=None, bias_enabled=False
@@ -180,12 +174,6 @@ class NGPDensityFieldConfig(InstantiateConfig):
 
     use_elastic: bool = False
     """Whether to use an elastic MLP."""
-    # pad_val: int = 1
-    # """Value to use for padding encoder output."""
-    # align_inputs: bool = False
-    # """Whether to align the input dimensions to the next highest multiple of 16."""
-    # align_outputs: bool = False
-    # """Whether to align the output dimensions to the next highest multiple of 16."""
     base: ElasticMLPConfig = field(
         default_factory=lambda: ElasticMLPConfig(
             output_activation=None, bias_enabled=False
@@ -466,9 +454,6 @@ class NGPRadianceField(NGPField):
                 output_dim=self.mlp_base_out_dim,
                 encoding_config=self.encoding_config,
                 elastic_mlp=config.base,
-                # pad_value=config.pad_val,
-                # align_inputs=config.align_inputs,
-                # align_outputs=config.align_outputs,
             )
         else:
             self.mlp_base = self.make_fused_base(width=64)
@@ -591,9 +576,6 @@ class NGPDensityField(NGPField):
                 output_dim=self.mlp_base_out_dim,
                 encoding_config=self.encoding_config,
                 elastic_mlp=config.base,
-                # pad_value=config.pad_val,
-                # align_inputs=config.align_inputs,
-                # align_outputs=config.align_outputs,
             )
         else:
             self.mlp_base = self.make_fused_base(width=64)

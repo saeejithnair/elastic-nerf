@@ -30,7 +30,6 @@ parameters:
   density-field.use-elastic:
     values:
       - True
-      - False
 command:
   - python
   - scripts/train/train_elastic_ngp_prop.py

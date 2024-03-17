@@ -16,9 +16,8 @@ parameters:
       - ship
   sampling-strategy:
     values:
+      - sequential
       - uniform
-      - exp-reverse
-      - exp
   radiance-field.use-elastic:
     values:
       - True
@@ -27,9 +26,9 @@ parameters:
   num-widths-to-sample:
     values:
       - 1
-      - 2
-      - 3
-
+  density-field.use-elastic:
+    values:
+      - True
 command:
   - python
   - scripts/train/train_elastic_ngp_prop.py

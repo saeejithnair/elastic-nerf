@@ -17,8 +17,7 @@ parameters:
   sampling-strategy:
     values:
       - uniform
-      - exp-reverse
-      - exp
+      - sequential
   radiance-field.use-elastic:
     values:
       - True
@@ -28,11 +27,6 @@ parameters:
   num-widths-to-sample:
     values:
       - 1
-      - 2
-      - 3
-  radiance-field.base.bias-enabled:
-    values:
-      - False
 
 command:
   - python
