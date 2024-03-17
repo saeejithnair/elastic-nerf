@@ -100,16 +100,18 @@ class NGPBaseTrainerConfig(PrintableConfig):
     """Number of widths to sample for each training step."""
     eval_elastic_widths: List[int] = field(default_factory=lambda: [64, 32, 16, 8])
     """Number of widths to use for evaluation."""
-    max_steps: int = 20000
+    max_steps: int = 80000
     """Maximum number of training steps."""
     fused_eval: bool = True
     """Whether to convert elastic modules to TCNN Fused before eval."""
-    num_eval_all_steps: int = 5000
+    num_eval_all_steps: int = 20000
     """Number of iterations after which to perform evaluation during training."""
     num_checkpoint_steps: int = 5000
     """Number of iterations after which to save a checkpoint."""
-    num_log_steps: int = 500
+    num_log_steps: int = 5000
     """Number of iterations after which to log training information."""
+    num_weights_grads_steps: int = 500
+    """Number of iterations after which to log weights and gradients."""
     radiance_field: NGPRadianceFieldConfig = field(
         default_factory=lambda: NGPRadianceFieldConfig()
     )
@@ -175,6 +177,14 @@ class NGPTrainer:
 
         # Set up the frozen models for evaluation
         self.freeze()
+
+    def cleanup(self):
+        # Wait for all logging processes to finish.
+        for process in self.logging_processes:
+            process.join()
+
+    def __del__(self):
+        self.cleanup()
 
     def setup_sampling_schedule(self):
         train_granularities = []
@@ -282,6 +292,7 @@ class NGPTrainer:
             "LPIPS Avg",
         ]
         self.start_time = time.time()
+        self.logging_processes = []
 
     def setup_datasets(self, num_rays_scaler: int = 1):
         """Setup training and testing datasets."""
@@ -425,9 +436,6 @@ class NGPTrainer:
             ), f"axis_value must be provided for axis_key: {axis_key}"
             log_dict[axis_key] = axis_value
 
-        if mode == "Train":
-            self.log_weights_and_gradients()
-
         wandb.log(log_dict, step=self.step, commit=commit)
 
     def preprocess_image(self, image):
@@ -493,25 +501,24 @@ class NGPTrainer:
         return preprocessed_images_dict
 
     def log_weights_and_gradients(self):
-        """Log weights and gradients for the models to WandB."""
+        # Log weights and gradients for the model asynchronously.
         checkpoints_dir = self.log_dir / "weights_grads"
         checkpoints_dir.mkdir(exist_ok=True, parents=True)
         for name, model in self.models_to_watch.items():
-            # Extract the state_dict for parameters
             params = model.state_dict()
             gradients = {
                 name: p.grad.clone().detach()
                 for name, p in model.named_parameters()
                 if p.grad is not None
             }
-
             file_path = checkpoints_dir / f"{name}_step_{self.step}.pt"
-            lu.robust_torch_save(
+            process = lu.async_robust_torch_save(
                 {"step": self.step, "params": params, "gradients": gradients}, file_path
             )
-            print(f"Saved weights and gradients for model '{name}' to '{file_path}'")
+            self.logging_processes.append(process)
 
     def log_checkpoint(self):
+        # Log checkpoint asynchronously.
         checkpoints_dir = self.log_dir / "checkpoints"
         checkpoints_dir.mkdir(exist_ok=True, parents=True)
         checkpoint_fp = (
@@ -527,11 +534,8 @@ class NGPTrainer:
         for name, model in self.models_to_watch.items():
             save_dict[f"{name}_state_dict"] = model.state_dict()
 
-        lu.robust_torch_save(
-            save_dict,
-            checkpoint_fp,
-        )
-        print(f"Saved model to {checkpoint_fp}")
+        process = lu.async_robust_torch_save(save_dict, checkpoint_fp)
+        self.logging_processes.append(process)
 
     def get_elastic_forward_kwargs(self, elastic_width, eval=False):
         raise NotImplementedError
@@ -762,6 +766,10 @@ class NGPTrainer:
                 # Log metrics at specified intervals or if gradient was not
                 # updated because loss was 0.
                 self.log_metrics(metrics_dict, commit=False)
+
+            if self.step_check(self.step, self.config.num_weights_grads_steps):
+                # Log weights and gradients at specified intervals.
+                self.log_weights_and_gradients()
 
             if self.step_check(self.step, self.config.num_checkpoint_steps):
                 # Save a checkpoint at specified intervals.

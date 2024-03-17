@@ -4,9 +4,10 @@ import os
 import time
 from pathlib import Path
 from typing import Union
-
+from multiprocessing import Process, current_process
 import torch
 from gonas.utils import logging_utils as gonas_lu
+import copy
 
 LOGGER = gonas_lu.configure_logger("elastic_nerf")
 
@@ -71,3 +72,19 @@ def robust_torch_save(obj, path, max_retries=5, initial_retry_delay=1):
 
     # If the loop completes without returning, it means all retries have been exhausted
     raise Exception(f"Failed to save object to {path} after {max_retries} attempts.")
+
+
+def async_robust_torch_save(obj, path, max_retries=5, initial_retry_delay=1):
+    # Define a wrapper function for torch.save to use with multiprocessing
+    def save_process(obj, path, max_retries, initial_retry_delay):
+        print(f"Process {current_process().name} started for saving to {path}")
+        robust_torch_save(obj, path, max_retries, initial_retry_delay)
+        print(f"Process {current_process().name} finished saving to {path}")
+
+    # Start a separate process for the save operation
+    process = Process(
+        target=save_process,
+        args=(copy.deepcopy(obj), path, max_retries, initial_retry_delay),
+    )
+    process.start()
+    return process  # Return the process so it can be tracked and joined later
