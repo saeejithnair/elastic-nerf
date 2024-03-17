@@ -102,7 +102,7 @@ class NGPBaseTrainerConfig(PrintableConfig):
     """Number of widths to use for evaluation."""
     max_steps: int = 20000
     """Maximum number of training steps."""
-    fused_eval: bool = False
+    fused_eval: bool = True
     """Whether to convert elastic modules to TCNN Fused before eval."""
     num_eval_all_steps: int = 5000
     """Number of iterations after which to perform evaluation during training."""
@@ -157,6 +157,9 @@ class NGPTrainer:
     def setup(self):
         set_random_seed(42)
 
+        # Set up the sampling schedule.
+        self.setup_sampling_schedule()
+
         # Set up the training and testing datasets
         self.train_dataset, self.test_dataset = self.setup_datasets()
 
@@ -167,6 +170,13 @@ class NGPTrainer:
         self.step = self.load_checkpoint()
         self.lpips_fn, self.ssim_fn = self.setup_evaluation_tools()
 
+        # Set up wandb
+        self.setup_logging()
+
+        # Set up the frozen models for evaluation
+        self.freeze()
+
+    def setup_sampling_schedule(self):
         train_granularities = []
         self.validate_elastic_compatibility()
 
@@ -204,11 +214,16 @@ class NGPTrainer:
             int(elastic_width): 0 for elastic_width in unique_elastic_widths
         }
 
-        # Set up wandb
-        self.setup_logging()
-
-        # Set up the frozen models for evaluation
-        self.freeze()
+        # Precompute the granularities to sample for each step
+        # (helps minimize randomness between runs).
+        self.sampling_schedule = []
+        for step in range(self.config.max_steps + 1):
+            granularities_to_sample, granularity_loss_weight = (
+                self.sample_granularities(step)
+            )
+            self.sampling_schedule.append(
+                (granularities_to_sample, granularity_loss_weight)
+            )
 
     def setup_logging(self):
         self.wandb_dir = self.config.wandb_dir
@@ -801,11 +816,11 @@ class NGPTrainer:
         psnr = -10.0 * torch.log(mse_loss) / np.log(10.0)
         return loss, mse_loss, psnr
 
-    def sample_granularities(self):
+    def sample_granularities(self, step: int):
         """Sample widths for training."""
         if self.config.sampling_strategy == "sequential":
             # Sequentially sample the widths at each step.
-            sampling_idx = self.step % len(self.train_elastic_widths)
+            sampling_idx = step % len(self.train_elastic_widths)
             granularity_loss_weight = 1
             return (
                 torch.tensor([self.train_elastic_widths[sampling_idx]]),

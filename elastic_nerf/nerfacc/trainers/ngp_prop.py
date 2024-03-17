@@ -285,7 +285,9 @@ class NGPPropTrainer(NGPTrainer):
     ) -> Tuple[Dict[str, Union[float, int]], bool]:
         """Perform a single training step."""
         self.set_mode(train=True)
-        granularities_to_sample, granularity_loss_weight = self.sample_granularities()
+        granularities_to_sample, granularity_loss_weight = self.sampling_schedule[
+            self.step
+        ]
 
         proposal_requires_grad = self.proposal_requires_grad_fn(self.step)
 

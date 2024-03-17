@@ -57,6 +57,7 @@ from elastic_nerf.nerfacc.configs.datasets.mipnerf360 import (
     MipNerf360DatasetOccConfig,
 )
 
+
 class NGPOccTrainerConfig(NGPBaseTrainerConfig):
     """Configurations for training the model."""
 
@@ -233,7 +234,9 @@ class NGPOccTrainer(NGPTrainer):
         """Perform a single training step."""
         self.set_mode(train=True)
 
-        granularities_to_sample, granularity_loss_weight = self.sample_granularities()
+        granularities_to_sample, granularity_loss_weight = self.sampling_schedule[
+            self.step
+        ]
 
         def occ_eval_fn(x):
             if not self.config.radiance_field.use_elastic:
