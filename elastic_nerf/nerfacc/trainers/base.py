@@ -634,7 +634,7 @@ class NGPTrainer:
             lpips[granularity_label].append(metrics_dict["lpips"])
             ssims[granularity_label].append(metrics_dict["ssim"])
 
-            if i % 10 == 0:
+            if i == 0:
                 preprocessed_images_dict = self.log_images(
                     {granularity_label: images_dict},
                     axis_value=i,
