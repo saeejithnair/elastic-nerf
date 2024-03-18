@@ -100,7 +100,9 @@ class NGPPropTrainer(NGPTrainer):
         ):
             assert self.config.num_train_widths == 1
             assert self.config.num_widths_to_sample == 1
-            assert self.config.eval_elastic_widths == [self.config.hidden_dim]
+            assert all(
+                [width <= self.config.hidden_dim for width in self.eval_elastic_widths]
+            )
 
     def initialize_model(self):
         """Initialize the radiance field and optimizer."""

@@ -192,7 +192,6 @@ class NGPTrainer:
 
     def setup_sampling_schedule(self):
         train_granularities = []
-        self.validate_elastic_compatibility()
 
         for i in range(self.config.num_train_widths):
             train_granularities.append(self.config.hidden_dim // (2**i))
@@ -250,6 +249,8 @@ class NGPTrainer:
             self.sampling_schedule.append(
                 (granularities_to_sample, granularity_loss_weight)
             )
+
+        self.validate_elastic_compatibility()
 
     def setup_logging(self):
         self.wandb_dir = self.config.wandb_dir
