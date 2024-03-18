@@ -1,0 +1,32 @@
+name: vanilla_nerf-blender-joint_4
+project: elastic-nerf
+entity: saeejithn
+method: grid
+description: This performs a sweep over blender dataset with nerfacc accelerated vanilla nerf model.
+parameters:
+  scene:
+    values:
+      - chair
+      - drums
+      - ficus
+      - hotdog
+      - lego
+      - materials
+      - mic
+      - ship
+  sampling-strategy:
+    values:
+      - uniform
+  num-train-widths:
+    value:
+      - 4
+  num-widths-to-sample:
+    values:
+      - 4
+  radiance-field.mlp.use-elastic:
+    values:
+      - True
+command:
+  - python
+  - scripts/train/train_mlp_nerf.py
+  - ${args}
