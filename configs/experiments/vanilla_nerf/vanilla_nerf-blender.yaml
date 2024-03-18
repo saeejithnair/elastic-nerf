@@ -25,7 +25,7 @@ parameters:
     values:
       - 1
   radiance-field.mlp.use-elastic:
-    value:
+    values:
       - True
 command:
   - python
