@@ -50,7 +50,7 @@ class VanillaNeRFTrainerConfig(NGPBaseTrainerConfig):
     """Number of widths to use for evaluation."""
     fused_eval: bool = False
     """Fusing models is not supported for VanillaNeRF."""
-    max_steps: int = 50000
+    max_steps: int = 100000
     """Maximum number of training steps."""
     num_eval_all_steps: int = 50000
     """Number of iterations after which to perform evaluation during training."""

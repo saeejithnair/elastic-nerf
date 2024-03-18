@@ -18,14 +18,15 @@ parameters:
     values:
       - uniform
   num-train-widths:
-    value: 6
+    value:
+      - 4
+      - 6
   num-widths-to-sample:
     values:
       - 1
-      - 3
-  radiance-field.mlp.base.use-granular-norm:
-    values:
-      - False
+  radiance-field.mlp.use-elastic:
+    value:
+      - True
 command:
   - python
   - scripts/train/train_mlp_nerf.py
