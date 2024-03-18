@@ -18,7 +18,7 @@ parameters:
     values:
       - uniform
   num-train-widths:
-    value:
+    values:
       - 6
   num-widths-to-sample:
     values:
