@@ -4,7 +4,7 @@ entity: saeejithn
 method: grid
 description: This performs a sweep over mipnerf360 dataset with baseline ngp occ model.
 parameters:
-  dataset:
+  dataset-name:
     value: mipnerf360
   scene:
     values:
@@ -17,8 +17,14 @@ parameters:
       - stump
   num-train-widths:
     value: 1
-  eval-elastic-widths:
-    value: 64
+  num-eval-elastic-widths:
+    value: 1
+  hidden-dim:
+    values:
+      - 64
+      - 32
+      - 16
+      - 8
   num-widths-to-sample:
     values:
       - 1

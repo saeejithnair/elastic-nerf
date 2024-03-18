@@ -16,8 +16,14 @@ parameters:
       - ship
   num-train-widths:
     value: 1
-  eval-elastic-widths:
-    value: 64
+  num-eval-elastic-widths:
+    value: 1
+  hidden-dim:
+    values:
+      - 64
+      - 32
+      - 16
+      - 8
   num-widths-to-sample:
     values:
       - 1
