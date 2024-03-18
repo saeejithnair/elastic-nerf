@@ -26,5 +26,5 @@ parameters:
       - False
 command:
   - python
-  - scripts/train/train_mlp_nerf.py
+  - scripts/train/train_elastic_vanilla_nerf.py
   - ${args}
