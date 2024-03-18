@@ -111,6 +111,7 @@ class NGPPropTrainer(NGPTrainer):
                 unbounded=self.dataset.unbounded,
                 n_levels=5,
                 max_resolution=resolution,
+                base_mlp_width=self.config.hidden_dim,
             ).to(self.device)
             for resolution in self.dataset.prop_network_resolutions
         ]
@@ -144,7 +145,9 @@ class NGPPropTrainer(NGPTrainer):
 
         grad_scaler = torch.cuda.amp.GradScaler(2**10)
         radiance_field: NGPRadianceField = self.config.radiance_field.setup(
-            aabb=aabb, unbounded=self.dataset.unbounded
+            aabb=aabb,
+            unbounded=self.dataset.unbounded,
+            base_mlp_width=self.config.hidden_dim,
         ).to(self.device)
         optimizer = torch.optim.Adam(
             radiance_field.parameters(),

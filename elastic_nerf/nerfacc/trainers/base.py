@@ -100,6 +100,8 @@ class NGPBaseTrainerConfig(PrintableConfig):
     """Number of widths to sample for each training step."""
     eval_elastic_widths: List[int] = field(default_factory=lambda: [64, 32, 16, 8])
     """Number of widths to use for evaluation."""
+    num_eval_elastic_widths: Optional[int] = None
+    """Number of widths to use for evaluation. If set, will use the first n widths used for training."""
     max_steps: int = 80000
     """Maximum number of training steps."""
     fused_eval: bool = True
@@ -195,7 +197,19 @@ class NGPTrainer:
         for i in range(self.config.num_train_widths):
             train_granularities.append(self.config.hidden_dim // (2**i))
         self.train_elastic_widths = torch.tensor(train_granularities)
-        self.eval_elastic_widths = torch.tensor(self.config.eval_elastic_widths)
+
+        # If we only want to evaluate on the first n widths corresponding to the
+        # hidden dimension used for training (this is useful for benchmarking a
+        # smaller width representation of the baseline architecture.)
+        if self.config.num_eval_elastic_widths is not None:
+            num_eval_elastic_widths = min(
+                len(self.train_elastic_widths), self.config.num_eval_elastic_widths
+            )
+            self.eval_elastic_widths = self.train_elastic_widths[
+                :num_eval_elastic_widths
+            ]
+        else:
+            self.eval_elastic_widths = torch.tensor(self.config.eval_elastic_widths)
 
         # The sampling weights determine the probability of a elastic_width
         # being selected for a forward pass.

@@ -410,6 +410,7 @@ class NGPRadianceField(NGPField):
         geo_feat_dim: int = 15,
         n_levels: int = 16,
         log2_hashmap_size: int = 19,
+        base_mlp_width: int = 64
     ) -> None:
         super().__init__()
         if not isinstance(aabb, torch.Tensor):
@@ -454,9 +455,10 @@ class NGPRadianceField(NGPField):
                 output_dim=self.mlp_base_out_dim,
                 encoding_config=self.encoding_config,
                 elastic_mlp=config.base,
+                net_width=base_mlp_width,
             )
         else:
-            self.mlp_base = self.make_fused_base(width=64)
+            self.mlp_base = self.make_fused_base(width=base_mlp_width)
         if self.geo_feat_dim > 0:
             self.mlp_head = tcnn.Network(
                 n_input_dims=(
@@ -550,6 +552,7 @@ class NGPDensityField(NGPField):
         max_resolution: int = 128,
         n_levels: int = 5,
         log2_hashmap_size: int = 17,
+        base_mlp_width: int = 64
     ) -> None:
         super().__init__()
         if not isinstance(aabb, torch.Tensor):
@@ -576,9 +579,10 @@ class NGPDensityField(NGPField):
                 output_dim=self.mlp_base_out_dim,
                 encoding_config=self.encoding_config,
                 elastic_mlp=config.base,
+                net_width=base_mlp_width,
             )
         else:
-            self.mlp_base = self.make_fused_base(width=64)
+            self.mlp_base = self.make_fused_base(width=base_mlp_width)
 
     def forward(self, positions: torch.Tensor, active_neurons: Optional[int] = None):
         kwargs = {}

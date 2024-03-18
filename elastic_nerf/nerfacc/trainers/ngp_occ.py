@@ -106,7 +106,7 @@ class NGPOccTrainer(NGPTrainer):
 
         grad_scaler = torch.cuda.amp.GradScaler(2**10)
         radiance_field: NGPRadianceField = self.config.radiance_field.setup(
-            aabb=self.get_aabb(estimator)
+            aabb=self.get_aabb(estimator), base_mlp_width=self.config.hidden_dim
         ).to(self.device)
         optimizer = torch.optim.Adam(
             radiance_field.parameters(),
