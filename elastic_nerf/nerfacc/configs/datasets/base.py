@@ -30,6 +30,7 @@ from tyro.extras._serialization import to_yaml, from_yaml
 import copy
 import wandb
 
+
 @dataclass
 class NGPBaseDatasetConfig(PrintableConfig):
     """Base dataset configuration."""
@@ -132,3 +133,25 @@ class NGPPropDatasetConfig(NGPBaseDatasetConfig):
     """Sampling type."""
     opaque_bkgd: bool = False
     """Whether to use opaque background."""
+
+
+@dataclass
+class VanillaNeRFDatasetConfig(NGPBaseDatasetConfig):
+    """Dataset/scene specific configurations."""
+
+    init_batch_size: int = 1024
+    """Initial batch size."""
+    target_sample_batch_size: int = 1 << 16
+    """Target sample batch size."""
+    near_plane: float = 0.0
+    """The near plane of the camera."""
+    far_plane: float = 1.0e10
+    """The far plane of the camera."""
+    grid_resolution: int = 128
+    """The resolution of the grid."""
+    grid_nlvl: int = 1
+    """The number of levels of the grid."""
+    render_step_size: float = 5e-3
+    """The step size for rendering."""
+    num_dynamic_batch_warmup_steps: int = 20
+    """Number of warmup steps for dynamic batch size."""

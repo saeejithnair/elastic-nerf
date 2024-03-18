@@ -116,10 +116,6 @@ class NGPBaseTrainerConfig(PrintableConfig):
     """Number of iterations after which to log weights and gradients."""
     weights_grads_warmup: int = 1000
     """Number of iterations to wait before logging weights and gradients less frequently."""
-    radiance_field: NGPRadianceFieldConfig = field(
-        default_factory=lambda: NGPRadianceFieldConfig()
-    )
-    """The configuration for the elastic MLP."""
     device: str = "cuda:0"
     """The device to use."""
     log_dir: Optional[Path] = None
@@ -252,6 +248,9 @@ class NGPTrainer:
 
         self.validate_elastic_compatibility()
 
+    def use_elastic(self):
+        raise NotImplementedError
+
     def setup_logging(self):
         self.wandb_dir = self.config.wandb_dir
         self.wandb_dir.mkdir(parents=True, exist_ok=True)
@@ -282,7 +281,7 @@ class NGPTrainer:
             "Scene": self.config.scene,
             "Dataset": self.config.dataset_name,
             "Hidden Dim": self.config.hidden_dim,
-            "Elastic": self.config.radiance_field.use_elastic,
+            "Elastic": self.use_elastic(),
             "Train Widths": self.config.num_train_widths,
             "Sampling Strategy": self.config.sampling_strategy,
             "Num Samples": self.config.num_widths_to_sample,

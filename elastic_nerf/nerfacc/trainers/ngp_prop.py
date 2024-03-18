@@ -58,9 +58,14 @@ from elastic_nerf.nerfacc.trainers.base import NGPBaseTrainerConfig, NGPTrainer
 class NGPPropTrainerConfig(NGPBaseTrainerConfig):
     """Configurations for training the model."""
 
+    radiance_field: NGPRadianceFieldConfig = field(
+        default_factory=lambda: NGPRadianceFieldConfig()
+    )
+    """The configuration for the elastic MLP."""
     density_field: NGPDensityFieldConfig = field(
         default_factory=lambda: NGPDensityFieldConfig()
     )
+    """The configuration for the density field."""
 
     def __post_init__(self):
         super().__post_init__()
@@ -94,15 +99,18 @@ class NGPPropTrainer(NGPTrainer):
         return super().setup_datasets(num_rays_scaler=self.config.num_widths_to_sample)
 
     def validate_elastic_compatibility(self):
-        if (
-            not self.config.radiance_field.use_elastic
-            and not self.config.density_field.use_elastic
-        ):
+        if not self.use_elastic():
             assert self.config.num_train_widths == 1
             assert self.config.num_widths_to_sample == 1
             assert all(
                 [width <= self.config.hidden_dim for width in self.eval_elastic_widths]
             )
+
+    def use_elastic(self):
+        return (
+            self.config.radiance_field.use_elastic
+            or self.config.density_field.use_elastic
+        )
 
     def initialize_model(self):
         """Initialize the radiance field and optimizer."""

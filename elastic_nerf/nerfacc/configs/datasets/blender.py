@@ -1,6 +1,7 @@
 from elastic_nerf.nerfacc.configs.datasets.base import (
     NGPOccDatasetConfig,
     NGPPropDatasetConfig,
+    VanillaNeRFDatasetConfig,
 )
 from dataclasses import dataclass, field
 from typing import Any, Dict, List, Literal, Optional, Tuple, Type, Union
@@ -61,6 +62,30 @@ class BlenderSyntheticDatasetPropConfig(NGPPropDatasetConfig):
         self.weight_decay = (
             1e-5 if self.scene in ["materials", "ficus", "drums"] else 1e-6
         )
+
+    def setup(self, **kwargs) -> BlenderSyntheticLoader:
+        return BlenderSyntheticLoader(**kwargs)
+
+    def download(self):
+        download_dataset(self.data_root.parent)
+
+
+@dataclass
+class BlenderSyntheticDatasetVanillaConfig(VanillaNeRFDatasetConfig):
+    """Dataset/scene specific configurations for Blender Synthetic dataset."""
+
+    data_root: Path = field(
+        default_factory=lambda: Path(os.environ["NERFSTUDIO_CACHE_DIR"])
+        / "data/blender"
+    )
+    """The root directory of the dataset."""
+    scene: Literal[
+        "chair", "drums", "ficus", "hotdog", "lego", "materials", "mic", "ship"
+    ] = "lego"
+    """Which scene to use."""
+
+    def __post_init__(self):
+        pass
 
     def setup(self, **kwargs) -> BlenderSyntheticLoader:
         return BlenderSyntheticLoader(**kwargs)

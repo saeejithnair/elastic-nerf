@@ -341,12 +341,12 @@ class Trainer:
 
         for elastic_width in self.elastic_width_sample_counts:
             granularity_label = f"elastic_{elastic_width}"
-            log_dict[
-                f"{mode}/num_sampled_times/{granularity_label}"
-            ] = self.elastic_width_sample_counts[elastic_width]
-            log_dict[
-                f"{mode}/num_updates_skipped/{granularity_label}"
-            ] = self.num_updates_skipped[elastic_width]
+            log_dict[f"{mode}/num_sampled_times/{granularity_label}"] = (
+                self.elastic_width_sample_counts[elastic_width]
+            )
+            log_dict[f"{mode}/num_updates_skipped/{granularity_label}"] = (
+                self.num_updates_skipped[elastic_width]
+            )
 
         log_dict[f"{mode}/elapsed_time"] = elapsed_time
         if axis_key is not None:

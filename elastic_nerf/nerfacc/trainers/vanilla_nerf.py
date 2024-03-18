@@ -6,11 +6,6 @@ Copyright (c) 2022 Ruilong Li, UC Berkeley.
 """
 
 import functools
-import math
-import os
-import subprocess
-import time
-import zipfile
 from collections import defaultdict
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
@@ -22,47 +17,45 @@ import torch.nn.functional as F
 import torchvision
 import tqdm
 import tyro
-from gonas.configs.base_config import InstantiateConfig, PrintableConfig
-from lpips import LPIPS
 from nerfacc.estimators.occ_grid import OccGridEstimator
 from nerfstudio.configs.config_utils import convert_markup_to_ansi
-from nerfstudio.scripts.downloads.download_data import BlenderDownload
-from torchmetrics.functional import structural_similarity_index_measure
-from tyro.extras._serialization import to_yaml, from_yaml
 import copy
 import wandb
-from elastic_nerf.nerfacc.datasets.nerf_360_v2 import SubjectLoader as MipNerf360Loader
-from elastic_nerf.nerfacc.datasets.nerf_synthetic import (
-    SubjectLoader as BlenderSyntheticLoader,
-)
-from elastic_nerf.nerfacc.radiance_fields.ngp import (
-    NGPRadianceField,
-    NGPRadianceFieldConfig,
-)
 from elastic_nerf.nerfacc.utils import (
-    NERF_SYNTHETIC_SCENES,
     render_image_with_occgrid,
 )
 from elastic_nerf.utils import logging_utils as lu
 from elastic_nerf.nerfacc.trainers.base import NGPBaseTrainerConfig, NGPTrainer
 from elastic_nerf.nerfacc.configs.datasets.base import (
-    NGPBaseDatasetConfig,
-    NGPOccDatasetConfig,
-    NGPPropDatasetConfig,
+    VanillaNeRFDatasetConfig,
 )
 from elastic_nerf.nerfacc.configs.datasets.blender import (
-    BlenderSyntheticDatasetOccConfig,
+    BlenderSyntheticDatasetVanillaConfig,
 )
-from elastic_nerf.nerfacc.configs.datasets.mipnerf360 import (
-    MipNerf360DatasetOccConfig,
+from elastic_nerf.nerfacc.radiance_fields.mlp import (
+    VanillaNeRFRadianceField,
+    VanillaNeRFRadianceFieldConfig,
 )
 
 
-class NGPOccTrainerConfig(NGPBaseTrainerConfig):
+@dataclass
+class VanillaNeRFTrainerConfig(NGPBaseTrainerConfig):
     """Configurations for training the model."""
 
-    radiance_field: NGPRadianceFieldConfig = field(
-        default_factory=lambda: NGPRadianceFieldConfig()
+    hidden_dim: int = 256
+    """The hidden dimension of the MLP."""
+    eval_elastic_widths: List[int] = field(
+        default_factory=lambda: [256, 128, 64, 32, 16, 8]
+    )
+    """Number of widths to use for evaluation."""
+    fused_eval: bool = False
+    """Fusing models is not supported for VanillaNeRF."""
+    max_steps: int = 50000
+    """Maximum number of training steps."""
+    num_eval_all_steps: int = 50000
+    """Number of iterations after which to perform evaluation during training."""
+    radiance_field: VanillaNeRFRadianceFieldConfig = field(
+        default_factory=lambda: VanillaNeRFRadianceFieldConfig()
     )
     """The configuration for the elastic MLP."""
 
@@ -70,24 +63,24 @@ class NGPOccTrainerConfig(NGPBaseTrainerConfig):
         super().__post_init__()
 
         if self.dataset_name == "blender":
-            self.dataset = BlenderSyntheticDatasetOccConfig(scene=self.scene)
-        elif self.dataset_name == "mipnerf360":
-            self.dataset = MipNerf360DatasetOccConfig(scene=self.scene)
+            self.dataset = BlenderSyntheticDatasetVanillaConfig(scene=self.scene)
         else:
             raise ValueError(f"Unknown dataset {self.dataset_name}")
 
-    def setup(self, **kwargs) -> "NGPOccTrainer":
+        self.radiance_field.mlp.net_width = self.hidden_dim
+
+    def setup(self, **kwargs) -> "VanillaNeRFTrainer":
         """Returns the instantiated object using the config."""
-        return NGPOccTrainer(self, **kwargs)
+        return VanillaNeRFTrainer(self, **kwargs)
 
 
-class NGPOccTrainer(NGPTrainer):
-    radiance_field: NGPRadianceField
+class VanillaNeRFTrainer(NGPTrainer):
+    radiance_field: VanillaNeRFRadianceField
     estimator: OccGridEstimator
-    config: NGPOccTrainerConfig
-    dataset: NGPOccDatasetConfig
+    config: VanillaNeRFTrainerConfig
+    dataset: VanillaNeRFDatasetConfig
 
-    def __init__(self, config: NGPOccTrainerConfig):
+    def __init__(self, config: VanillaNeRFTrainerConfig):
         super().__init__(config)
         self.setup()
 
@@ -95,15 +88,12 @@ class NGPOccTrainer(NGPTrainer):
         return estimator.aabbs[-1]
 
     def validate_elastic_compatibility(self):
-        if not self.config.radiance_field.use_elastic:
+        if not self.config.radiance_field.mlp.use_elastic:
             assert self.config.num_train_widths == 1
             assert self.config.num_widths_to_sample == 1
             assert all(
                 [width <= self.config.hidden_dim for width in self.eval_elastic_widths]
             )
-
-    def use_elastic(self):
-        return self.config.radiance_field.use_elastic
 
     def initialize_model(self):
         """Initialize the radiance field and optimizer."""
@@ -112,49 +102,39 @@ class NGPOccTrainer(NGPTrainer):
             roi_aabb=aabb,
             resolution=self.dataset.grid_resolution,
             levels=self.dataset.grid_nlvl,
+            near_plane=self.dataset.near_plane,
+            far_plane=self.dataset.far_plane,
         ).to(self.device)
 
-        grad_scaler = torch.cuda.amp.GradScaler(2**10)
-        radiance_field: NGPRadianceField = self.config.radiance_field.setup(
-            aabb=self.get_aabb(estimator), base_mlp_width=self.config.hidden_dim
-        ).to(self.device)
-        optimizer = torch.optim.Adam(
-            radiance_field.parameters(),
-            lr=self.dataset.optimizer_lr,
-            eps=self.dataset.optimizer_eps,
-            weight_decay=self.dataset.weight_decay,
+        # grad_scaler = torch.cuda.amp.GradScaler(2**10)
+        radiance_field: VanillaNeRFRadianceField = (
+            self.config.radiance_field.setup().to(self.device)
         )
-        scheduler = torch.optim.lr_scheduler.ChainedScheduler(
-            [
-                torch.optim.lr_scheduler.LinearLR(
-                    optimizer,
-                    start_factor=self.dataset.scheduler_start_factor,
-                    total_iters=self.dataset.scheduler_total_iters,
-                ),
-                torch.optim.lr_scheduler.MultiStepLR(
-                    optimizer,
-                    milestones=[
-                        self.config.max_steps // 2,
-                        self.config.max_steps * 3 // 4,
-                        self.config.max_steps * 9 // 10,
-                    ],
-                    gamma=self.dataset.scheduler_gamma,
-                ),
-            ]
+        optimizer = torch.optim.Adam(
+            radiance_field.parameters(), lr=self.dataset.optimizer_lr
+        )
+        scheduler = torch.optim.lr_scheduler.MultiStepLR(
+            optimizer,
+            milestones=[
+                self.config.max_steps // 2,
+                self.config.max_steps * 3 // 4,
+                self.config.max_steps * 5 // 6,
+                self.config.max_steps * 9 // 10,
+            ],
+            gamma=self.dataset.scheduler_gamma,
         )
 
         self.radiance_field = radiance_field
         self.estimator = estimator
         self.optimizer = optimizer
         self.scheduler = scheduler
-        self.grad_scaler = grad_scaler
 
         self.models_to_watch = {
             "radiance_field": self.radiance_field,
         }
 
     def get_elastic_forward_kwargs(self, elastic_width, eval=False):
-        if not self.config.radiance_field.use_elastic or (
+        if not self.config.radiance_field.mlp.use_elastic or (
             eval and self.config.fused_eval
         ):
             # No need to pass active_neurons to the radiance field if it's
@@ -172,12 +152,13 @@ class NGPOccTrainer(NGPTrainer):
             near_plane=self.dataset.near_plane,
             render_step_size=self.dataset.render_step_size,
             render_bkgd=render_bkgd,
-            cone_angle=self.dataset.cone_angle,
-            alpha_thre=self.dataset.alpha_thre,
             # test options
             test_chunk_size=self.dataset.test_chunk_size,
             **kwargs,
         )
+
+    def use_elastic(self):
+        return self.config.radiance_field.mlp.use_elastic
 
     def train_granular_step(
         self, elastic_width: int, granularity_loss_weight: float
@@ -249,7 +230,7 @@ class NGPOccTrainer(NGPTrainer):
         ]
 
         def occ_eval_fn(x):
-            if not self.config.radiance_field.use_elastic:
+            if not self.config.radiance_field.mlp.use_elastic:
                 density = self.radiance_field.query_density(x)
                 return density * self.dataset.render_step_size
 
@@ -297,8 +278,6 @@ class NGPOccTrainer(NGPTrainer):
 
         loss = functools.reduce(torch.add, loss_dict.values())
         self.optimizer.zero_grad()
-        # do not unscale it because we are using Adam.
-        self.grad_scaler.scale(loss).backward()
         self.optimizer.step()
         self.scheduler.step()
         gradient_updated = True
