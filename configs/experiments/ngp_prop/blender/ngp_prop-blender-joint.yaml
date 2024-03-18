@@ -1,0 +1,36 @@
+name: ngp_prop-blender-joint
+project: elastic-nerf
+entity: saeejithn
+method: grid
+description: This performs a sweep over blender dataset with nerfacc accelerated ngp prop model.
+parameters:
+  scene:
+    values:
+      - chair
+      - drums
+      - ficus
+      - hotdog
+      - lego
+      - materials
+      - mic
+      - ship
+  sampling-strategy:
+    values:
+      - uniform
+  radiance-field.use-elastic:
+    values:
+      - True
+  num-train-widths:
+    value: 4
+  num-widths-to-sample:
+    values:
+      - 4
+      - 3
+      - 2
+  density-field.use-elastic:
+    values:
+      - True
+command:
+  - python
+  - scripts/train/train_elastic_ngp_prop.py
+  - ${args}
