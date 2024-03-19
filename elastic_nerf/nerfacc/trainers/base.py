@@ -96,7 +96,7 @@ class NGPBaseTrainerConfig(PrintableConfig):
     """The hidden dimension of the MLP."""
     num_train_widths: int = 4
     """Number of widths to use for training."""
-    duplicate_train_batch_across_width: bool = False
+    duplicate_train_batch_across_widths: bool = False
     """Whether to duplicate the training batch across different widths."""
     num_widths_to_sample: int = 1
     """Number of widths to sample for each training step."""
@@ -246,11 +246,11 @@ class NGPTrainer:
                 (granularities_to_sample, granularity_loss_weight)
             )
             # Precompute the train dataset indices for the granularities at each step.
-            if self.config.duplicate_train_batch_across_width:
+            if self.config.duplicate_train_batch_across_widths:
                 # Sample the same indices for each step across granularities.
                 train_indices_to_sample.append(
                     torch.randint(0, len(self.train_dataset), (1,)).repeat(
-                        len(granularities_to_sample)
+                        1, len(granularities_to_sample)
                     )
                 )
             else:
@@ -258,10 +258,10 @@ class NGPTrainer:
                 train_indices_to_sample.append(
                     torch.randint(
                         0, len(self.train_dataset), (len(granularities_to_sample),)
-                    )
+                    ).unsqueeze(0)
                 )
 
-        self.train_indices_to_sample = torch.tensor(train_indices_to_sample)
+        self.train_indices_to_sample = torch.cat(train_indices_to_sample)
 
         self.validate_elastic_compatibility()
 
