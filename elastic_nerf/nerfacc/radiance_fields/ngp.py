@@ -309,7 +309,7 @@ class NGPField(torch.nn.Module):
         if params is not None:
             fused_model.params.data[...] = params
 
-        print(f"Using {otype} for base width {width}")
+        print(f"Using {otype} for tcnn.NetworkWithInputEncoding base width {width}")
 
         return fused_model
 
