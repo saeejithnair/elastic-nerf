@@ -15,7 +15,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 from gonas.configs.base_config import FlexibleInstantiateConfig, InstantiateConfig
 from typing_extensions import NotRequired, TypedDict
-
+import tinycudann as tcnn
 from elastic_nerf.modules.elastic_mlp import GranularNorm, GranularNormConfig
 
 
@@ -478,6 +478,61 @@ class ElasticMLP(nn.Module):
 
         return new_model
 
+    def pad_input_to_16(self, tensor, value=0, block_size=16):
+        output_dim = tensor.shape[1]
+        pad_size = (block_size - (output_dim % block_size)) % block_size
+        return nn.functional.pad(tensor, pad=(0, pad_size), value=value)
+
+    def pad_output_to_16(self, tensor, value=0, block_size=16):
+        output_dim = tensor.shape[0]
+        pad_size = (block_size - (output_dim % block_size)) % block_size
+        return nn.functional.pad(tensor, pad=(0, 0, 0, pad_size), value=value)
+
+    def get_packed_weights(self, block_size=16):
+        layers = []
+        input_layer_padded = self.pad_input_to_16(
+            self.hidden_layers[0].weight.data, value=0, block_size=block_size
+        )
+        layers.append(input_layer_padded.flatten())
+
+        for i in range(1, self.net_depth):
+            layer_padded = self.pad_output_to_16(
+                self.hidden_layers[i].weight.data, value=0, block_size=block_size
+            )
+            layers.append(layer_padded.flatten())
+
+        output_layer_padded = self.pad_output_to_16(
+            self.output_layer.weight.data, value=0, block_size=16
+        )
+        layers.append(output_layer_padded.flatten())
+        params = torch.cat(layers)
+        return params
+
+    def make_fused(self, width, params: Optional[torch.Tensor] = None):
+        ff_supported_widths = [16, 32, 64, 128]
+        otype = "FullyFusedMLP" if width in ff_supported_widths else "CutlassMLP"
+        fused_model = tcnn.Network(
+            n_input_dims=self.input_dim,
+            n_output_dims=self.output_dim,
+            network_config={
+                "otype": otype,
+                "activation": "ReLU",
+                "output_activation": "None",
+                "n_neurons": width,
+                "n_hidden_layers": self.net_depth,
+            },
+        )
+        if params is not None:
+            fused_model.params.data[...] = params
+
+        return fused_model
+
+    def load_fused(self, elastic_width):
+        block_size = 8 if elastic_width == 8 else 16
+        params = self.get_packed_weights(block_size=block_size)
+        fused_model = self.make_fused(elastic_width, params)
+        return fused_model
+
 
 class DenseLayer(MLP):
     def __init__(self, input_dim, output_dim, **kwargs):
@@ -532,7 +587,7 @@ class NerfMLP(nn.Module):
 
         if use_elastic:
             assert base is not None
-            self.base = base.setup(
+            self.base: ElasticMLP = base.setup(
                 input_dim=input_dim,
                 net_depth=net_depth,
                 net_width=net_width,
@@ -639,7 +694,7 @@ class VanillaNeRFRadianceField(nn.Module):
         super().__init__()
         self.posi_encoder = SinusoidalEncoder(3, 0, 10, True)
         self.view_encoder = SinusoidalEncoder(3, 0, 4, True)
-        self.mlp = config.mlp.setup(
+        self.mlp: NerfMLP = config.mlp.setup(
             input_dim=self.posi_encoder.latent_dim,
             condition_dim=self.view_encoder.latent_dim,
         )
@@ -672,6 +727,22 @@ class VanillaNeRFRadianceField(nn.Module):
             condition = self.view_encoder(condition)
         rgb, sigma = self.mlp(x, condition=condition, **kwargs)
         return torch.sigmoid(rgb), F.relu(sigma)
+
+    def load_elastic_width(
+        self,
+        elastic_width: int,
+    ):
+        """Replaces base size modules with their smaller width version."""
+        self.mlp.base = self.mlp.base.get_sliced_net(elastic_width)
+
+    def load_width(self, elastic_width: int, load_fused: bool):
+        if not self.mlp.use_elastic:
+            return
+
+        if load_fused:
+            raise ValueError("Fused loading is not supported for Vanilla NeRF MLPs.")
+
+        self.load_elastic_width(elastic_width)
 
 
 # class TNeRFRadianceField(nn.Module):

@@ -136,7 +136,14 @@ class NGPRadianceFieldConfig(InstantiateConfig):
             output_activation=None, bias_enabled=False
         )
     )
-    """Configuration if using an elastic MLP."""
+    """Base configuration if using an elastic MLP."""
+    use_elastic_head: bool = False
+    head: ElasticMLPConfig = field(
+        default_factory=lambda: ElasticMLPConfig(
+            output_activation=None, bias_enabled=False
+        )
+    )
+    """Base configuration if using an elastic MLP."""
 
     @staticmethod
     def from_dict(data: dict) -> "NGPRadianceFieldConfig":
@@ -229,21 +236,8 @@ class ElasticMLPWithInputEncoding(torch.nn.Module):
         )
 
     def get_packed_weights(self):
-        input_layer_padded = self.pad_input_to_16(
-            self.elastic_mlp.hidden_layers[0].weight.data, value=0
-        )
-        output_layer_padded = self.pad_output_to_16(
-            self.elastic_mlp.output_layer.weight.data, value=0
-        )
         # Currently only supports packing the MLP
-        params = torch.cat(
-            [
-                # self.encoding.params.data.flatten(),
-                input_layer_padded.flatten(),
-                output_layer_padded.flatten(),
-            ]
-        )
-        return params
+        return self.elastic_mlp.get_packed_weights()
 
     # def pad_output_to_16(self, tensor, value):
     #     """Pad the output tensor to the next highest multiple of 16 with 0s"""
@@ -257,46 +251,9 @@ class ElasticMLPWithInputEncoding(torch.nn.Module):
     #     pad_size = (16 - (output_dim % 16)) % 16
     #     return nn.functional.pad(tensor, pad=(0, pad_size, 0, 0), value=value)
 
-    def make_fused(self, width, params: Optional[torch.Tensor] = None):
-        # FullyFusedMLP only supports certain widths.
-        ff_supported_widths = [16, 32, 64, 128]
-        otype = "FullyFusedMLP" if width in ff_supported_widths else "CutlassMLP"
-        # Print all arguments for debugging
-        # print(f"Using {otype} for width {width}")
-        # print(
-        #     f"Encoding config: {self.encoding_config}, n_input_dims: {self.num_dim}, n_output_dims: {self.mlp_base_out_dim}"
-        # )
-        fused_model = tcnn.Network(
-            n_input_dims=self.encoding.n_output_dims,
-            n_output_dims=self.output_dim,
-            network_config={
-                "otype": otype,
-                "activation": "ReLU",
-                "output_activation": "None",
-                "n_neurons": width,
-                "n_hidden_layers": 1,
-            },
-        )
-        if params is not None:
-            fused_model.params.data[...] = params
-
-        return fused_model
-
     def load_fused(self, elastic_width):
-        packed_weights = self.get_packed_weights()
-        ff_mlp = self.make_fused(elastic_width, packed_weights)
-        self.elastic_mlp = ff_mlp
+        self.elastic_mlp = self.elastic_mlp.load_fused(elastic_width)
         print(f"Replaced ElasticMLP with FullyFusedMLP for width {elastic_width}")
-
-    def pad_input_to_16(self, tensor, value=0, block_size=16):
-        output_dim = tensor.shape[1]
-        pad_size = (block_size - (output_dim % block_size)) % block_size
-        return nn.functional.pad(tensor, pad=(0, pad_size), value=value)
-
-    def pad_output_to_16(self, tensor, value=0, block_size=16):
-        output_dim = tensor.shape[0]
-        pad_size = (block_size - (output_dim % block_size)) % block_size
-        return nn.functional.pad(tensor, pad=(0, 0, 0, pad_size), value=value)
 
     def forward(
         self, x: torch.Tensor, active_neurons: Optional[int] = None
@@ -336,11 +293,6 @@ class NGPField(torch.nn.Module):
         # FullyFusedMLP only supports certain widths.
         ff_supported_widths = [16, 32, 64, 128]
         otype = "FullyFusedMLP" if width in ff_supported_widths else "CutlassMLP"
-        # Print all arguments for debugging
-        # print(f"Using {otype} for width {width}")
-        # print(
-        #     f"Encoding config: {self.encoding_config}, n_input_dims: {self.num_dim}, n_output_dims: {self.mlp_base_out_dim}"
-        # )
         fused_model = tcnn.NetworkWithInputEncoding(
             n_input_dims=self.num_dim,
             n_output_dims=self.mlp_base_out_dim,
@@ -351,6 +303,26 @@ class NGPField(torch.nn.Module):
                 "output_activation": "None",
                 "n_neurons": width,
                 "n_hidden_layers": 1,
+            },
+        )
+        if params is not None:
+            fused_model.params.data[...] = params
+
+        return fused_model
+
+    def make_fused_head(self, width: int, params: Optional[torch.Tensor] = None):
+        # FullyFusedMLP only supports certain widths.
+        ff_supported_widths = [16, 32, 64, 128]
+        otype = "FullyFusedMLP" if width in ff_supported_widths else "CutlassMLP"
+        fused_model = tcnn.Network(
+            n_input_dims=self.head_input_dim,
+            n_output_dims=3,
+            network_config={
+                "otype": otype,
+                "activation": "ReLU",
+                "output_activation": "None",
+                "n_neurons": width,
+                "n_hidden_layers": 2,
             },
         )
         if params is not None:
@@ -371,7 +343,7 @@ class NGPField(torch.nn.Module):
         if not self.config.use_elastic:
             return
 
-        widths_which_benefit_from_fusing = [64, 32]
+        widths_which_benefit_from_fusing = [128, 64, 32, 16, 8]
         if load_fused and elastic_width in widths_which_benefit_from_fusing:
             self.load_fused(elastic_width)
         else:
@@ -382,16 +354,7 @@ class NGPField(torch.nn.Module):
         from the elastic MLP into the fully fused MLP. Also saves the elastic MLP
         so that it can be loaded back later."""
         self.load_elastic_width(elastic_width)
-        # Extract and pack the weights from the ElasticMLP
         self.mlp_base.load_fused(elastic_width)
-        # packed_weights = self.mlp_base.elastic_mlp.get_packed_weights()
-        # ff_mlp_base = self.make_fused_base(elastic_width, packed_weights)
-
-        # # Ensure the buffer size matches the total parameters of the tcnn model
-        # assert (
-        #     packed_weights.numel() == ff_mlp_base.params.numel()
-        # ), f"Mismatch in the number of parameters between packed ElasticMLP and Fused TCNN MLP! {packed_weights.numel()} vs {ff_mlp_base.params.numel()} for width {elastic_width}."
-        # self.mlp_base = ff_mlp_base
 
 
 class NGPRadianceField(NGPField):
@@ -410,13 +373,14 @@ class NGPRadianceField(NGPField):
         geo_feat_dim: int = 15,
         n_levels: int = 16,
         log2_hashmap_size: int = 19,
-        base_mlp_width: int = 64
+        base_mlp_width: int = 64,
+        head_mlp_width: int = 64,
     ) -> None:
         super().__init__()
         if not isinstance(aabb, torch.Tensor):
             aabb = torch.tensor(aabb, dtype=torch.float32)
         self.register_buffer("aabb", aabb)
-        self.config = config
+        self.config: NGPRadianceFieldConfig = config
         self.num_dim = num_dim
         self.use_viewdirs = use_viewdirs
         self.density_activation = density_activation
@@ -460,20 +424,20 @@ class NGPRadianceField(NGPField):
         else:
             self.mlp_base = self.make_fused_base(width=base_mlp_width)
         if self.geo_feat_dim > 0:
-            self.mlp_head = tcnn.Network(
-                n_input_dims=(
-                    (self.direction_encoding.n_output_dims if self.use_viewdirs else 0)
-                    + self.geo_feat_dim
-                ),
-                n_output_dims=3,
-                network_config={
-                    "otype": "FullyFusedMLP",
-                    "activation": "ReLU",
-                    "output_activation": "None",
-                    "n_neurons": 64,
-                    "n_hidden_layers": 2,
-                },
-            )
+            self.head_input_dim = (
+                self.direction_encoding.n_output_dims if self.use_viewdirs else 0
+            ) + self.geo_feat_dim
+            if self.config.use_elastic_head:
+                self.mlp_head: ElasticMLP = config.head.setup(
+                    input_dim=self.head_input_dim,
+                    output_dim=3,
+                    net_depth=2,
+                    net_width=head_mlp_width,
+                    skip_layer=None,
+                    output_enabled=True,
+                )
+            else:
+                self.mlp_head = self.make_fused_head(width=head_mlp_width)
 
     def query_density(
         self, x, return_feat: bool = False, active_neurons: Optional[int] = None
@@ -537,6 +501,59 @@ class NGPRadianceField(NGPField):
             rgb = self._query_rgb(directions, embedding=embedding)
         return rgb, density  # type: ignore
 
+    def make_fused_head(self, width: int, params: Optional[torch.Tensor] = None):
+        # FullyFusedMLP only supports certain widths.
+        ff_supported_widths = [16, 32, 64, 128]
+        otype = "FullyFusedMLP" if width in ff_supported_widths else "CutlassMLP"
+        fused_model = tcnn.Network(
+            n_input_dims=self.head_input_dim,
+            n_output_dims=3,
+            network_config={
+                "otype": otype,
+                "activation": "ReLU",
+                "output_activation": "None",
+                "n_neurons": width,
+                "n_hidden_layers": 2,
+            },
+        )
+        if params is not None:
+            fused_model.params.data[...] = params
+
+        return fused_model
+
+    def load_elastic_width(
+        self,
+        elastic_width: int,
+    ):
+        super().load_elastic_width(elastic_width)
+
+        if self.config.use_elastic_head:
+            self.mlp_head = self.mlp_head.get_sliced_net(elastic_width)
+
+    def load_width(self, elastic_width: int, load_fused: bool):
+
+        if not self.config.use_elastic and not self.config.use_elastic_head:
+            return
+
+        widths_which_benefit_from_fusing = [128, 64, 32, 16, 8]
+        if load_fused and elastic_width in widths_which_benefit_from_fusing:
+            self.load_fused(elastic_width)
+        else:
+            self.load_elastic_width(elastic_width)
+
+    def load_fused(self, elastic_width: int):
+        """Replace the elastic MLP with a fully fused MLP and load the weights
+        from the elastic MLP into the fully fused MLP. Also saves the elastic MLP
+        so that it can be loaded back later."""
+        self.load_elastic_width(elastic_width)
+
+        if self.config.use_elastic:
+            self.mlp_base.load_fused(elastic_width)
+
+        if self.config.use_elastic_head:
+            self.mlp_head = self.mlp_head.load_fused(elastic_width)
+            print(f"Replaced MLP head with FullyFusedMLP for width {elastic_width}")
+
 
 class NGPDensityField(NGPField):
     """Instance-NGP Density Field used for resampling"""
@@ -552,7 +569,7 @@ class NGPDensityField(NGPField):
         max_resolution: int = 128,
         n_levels: int = 5,
         log2_hashmap_size: int = 17,
-        base_mlp_width: int = 64
+        base_mlp_width: int = 64,
     ) -> None:
         super().__init__()
         if not isinstance(aabb, torch.Tensor):

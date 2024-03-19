@@ -178,14 +178,6 @@ class NGPTrainer:
         # Set up the frozen models for evaluation
         self.freeze()
 
-    def cleanup(self):
-        # Wait for all logging processes to finish.
-        for process in self.logging_processes:
-            process.join()
-
-    def __del__(self):
-        self.cleanup()
-
     def setup_sampling_schedule(self):
         train_granularities = []
 
@@ -308,7 +300,6 @@ class NGPTrainer:
             "LPIPS Avg",
         ]
         self.start_time = time.time()
-        self.logging_processes = []
         self.num_weights_grads_steps = 10
 
     def setup_datasets(self, num_rays_scaler: int = 1):

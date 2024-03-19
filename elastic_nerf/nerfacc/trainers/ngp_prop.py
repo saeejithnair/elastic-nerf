@@ -122,6 +122,7 @@ class NGPPropTrainer(NGPTrainer):
                 n_levels=5,
                 max_resolution=resolution,
                 base_mlp_width=self.config.hidden_dim,
+                head_mlp_width=self.config.hidden_dim,
             ).to(self.device)
             for resolution in self.dataset.prop_network_resolutions
         ]
