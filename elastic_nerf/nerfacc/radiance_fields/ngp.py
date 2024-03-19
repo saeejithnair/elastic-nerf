@@ -310,6 +310,8 @@ class NGPField(torch.nn.Module):
         if params is not None:
             fused_model.params.data[...] = params
 
+        print(f"Using {otype} for base width {width}")
+
         return fused_model
 
     def make_fused_head(self, width: int, params: Optional[torch.Tensor] = None):
@@ -330,6 +332,7 @@ class NGPField(torch.nn.Module):
         if params is not None:
             fused_model.params.data[...] = params
 
+        print(f"Using {otype} for head width {width} with depth {self.head_depth}")
         return fused_model
 
     def load_elastic_width(
@@ -423,6 +426,7 @@ class NGPRadianceField(NGPField):
                 elastic_mlp=config.base,
                 net_width=base_mlp_width,
             )
+            print(f"Using ElasticMLPWithInputEncoding for width {base_mlp_width}")
         else:
             self.mlp_base = self.make_fused_base(width=base_mlp_width)
         if self.geo_feat_dim > 0:
