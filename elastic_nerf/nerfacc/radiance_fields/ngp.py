@@ -255,7 +255,6 @@ class ElasticMLPWithInputEncoding(torch.nn.Module):
 
     def load_fused(self, elastic_width):
         self.elastic_mlp = self.elastic_mlp.load_fused(elastic_width)
-        print(f"Replaced ElasticMLP with FullyFusedMLP for width {elastic_width}")
 
     def forward(
         self, x: torch.Tensor, active_neurons: Optional[int] = None
@@ -313,53 +312,6 @@ class NGPField(torch.nn.Module):
         print(f"Using {otype} for base width {width}")
 
         return fused_model
-
-    def make_fused_head(self, width: int, params: Optional[torch.Tensor] = None):
-        # FullyFusedMLP only supports certain widths.
-        ff_supported_widths = [16, 32, 64, 128]
-        otype = "FullyFusedMLP" if width in ff_supported_widths else "CutlassMLP"
-        fused_model = tcnn.Network(
-            n_input_dims=self.head_input_dim,
-            n_output_dims=3,
-            network_config={
-                "otype": otype,
-                "activation": "ReLU",
-                "output_activation": "None",
-                "n_neurons": width,
-                "n_hidden_layers": self.head_depth,
-            },
-        )
-        if params is not None:
-            fused_model.params.data[...] = params
-
-        print(f"Using {otype} for head width {width} with depth {self.head_depth}")
-        return fused_model
-
-    def load_elastic_width(
-        self,
-        elastic_width: int,
-    ):
-        """Replaces base size modules with their smaller width version."""
-        self.mlp_base.elastic_mlp = self.mlp_base.elastic_mlp.get_sliced_net(
-            elastic_width
-        )
-
-    def load_width(self, elastic_width: int, load_fused: bool):
-        if not self.config.use_elastic:
-            return
-
-        widths_which_benefit_from_fusing = [128, 64, 32, 16, 8]
-        if load_fused and elastic_width in widths_which_benefit_from_fusing:
-            self.load_fused(elastic_width)
-        else:
-            self.load_elastic_width(elastic_width)
-
-    def load_fused(self, elastic_width: int):
-        """Replace the elastic MLP with a fully fused MLP and load the weights
-        from the elastic MLP into the fully fused MLP. Also saves the elastic MLP
-        so that it can be loaded back later."""
-        self.load_elastic_width(elastic_width)
-        self.mlp_base.load_fused(elastic_width)
 
 
 class NGPRadianceField(NGPField):
@@ -537,11 +489,13 @@ class NGPRadianceField(NGPField):
                 "activation": "ReLU",
                 "output_activation": "None",
                 "n_neurons": width,
-                "n_hidden_layers": 2,
+                "n_hidden_layers": self.head_depth,
             },
         )
         if params is not None:
             fused_model.params.data[...] = params
+
+        print(f"Using {otype} for head width {width} with depth {self.head_depth}")
 
         return fused_model
 
@@ -549,10 +503,15 @@ class NGPRadianceField(NGPField):
         self,
         elastic_width: int,
     ):
-        super().load_elastic_width(elastic_width)
+        if self.config.use_elastic:
+            self.mlp_base.elastic_mlp = self.mlp_base.elastic_mlp.get_sliced_net(
+                elastic_width
+            )
+            print(f"Loaded elastic width {elastic_width} for base MLP")
 
         if self.config.use_elastic_head:
             self.mlp_head = self.mlp_head.get_sliced_net(elastic_width)
+            print(f"Loaded elastic width {elastic_width} for head MLP")
 
     def load_width(self, elastic_width: int, load_fused: bool):
 
@@ -573,10 +532,11 @@ class NGPRadianceField(NGPField):
 
         if self.config.use_elastic:
             self.mlp_base.load_fused(elastic_width)
+            print(f"Replaced base elastic MLP with fused MLP for width {elastic_width}")
 
         if self.config.use_elastic_head:
             self.mlp_head = self.mlp_head.load_fused(elastic_width)
-            print(f"Replaced MLP head with FullyFusedMLP for width {elastic_width}")
+            print(f"Replaced head elastic MLP with fused MLP for width {elastic_width}")
 
 
 class NGPDensityField(NGPField):
@@ -645,3 +605,31 @@ class NGPDensityField(NGPField):
             self.density_activation(density_before_activation) * selector[..., None]
         )
         return density
+
+    def load_elastic_width(
+        self,
+        elastic_width: int,
+    ):
+        """Replaces base size modules with their smaller width version."""
+        self.mlp_base.elastic_mlp = self.mlp_base.elastic_mlp.get_sliced_net(
+            elastic_width
+        )
+        print(f"Loaded elastic width {elastic_width} for base MLP")
+
+    def load_width(self, elastic_width: int, load_fused: bool):
+        if not self.config.use_elastic:
+            return
+
+        widths_which_benefit_from_fusing = [128, 64, 32, 16, 8]
+        if load_fused and elastic_width in widths_which_benefit_from_fusing:
+            self.load_fused(elastic_width)
+        else:
+            self.load_elastic_width(elastic_width)
+
+    def load_fused(self, elastic_width: int):
+        """Replace the elastic MLP with a fully fused MLP and load the weights
+        from the elastic MLP into the fully fused MLP. Also saves the elastic MLP
+        so that it can be loaded back later."""
+        self.load_elastic_width(elastic_width)
+        self.mlp_base.load_fused(elastic_width)
+        print(f"Replaced base elastic MLP with fused MLP for width {elastic_width}")
