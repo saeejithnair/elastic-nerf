@@ -245,9 +245,10 @@ class NGPPropTrainer(NGPTrainer):
         elastic_width: int,
         granularity_loss_weight: float,
         proposal_requires_grad: bool,
+        train_data_idx: int,
     ) -> Tuple[torch.Tensor, Optional[torch.Tensor], Dict[str, Any]]:
 
-        rays, pixels, render_bkgd = self.get_train_data()
+        rays, pixels, render_bkgd = self.get_train_data(train_data_idx)
         kwargs = self.get_elastic_forward_kwargs(elastic_width)
         kwargs["proposal_requires_grad"] = proposal_requires_grad
 
@@ -313,8 +314,12 @@ class NGPPropTrainer(NGPTrainer):
                 torch.cuda.empty_cache()
             elastic_width = int(elastic_width)
             granularity_label = f"elastic_{elastic_width}"
+            train_data_idx = self.get_train_data_idx(self.step, i)
             loss, estimator_loss, metrics = self.train_granular_step(
-                int(elastic_width), granularity_loss_weight, proposal_requires_grad
+                int(elastic_width),
+                granularity_loss_weight,
+                proposal_requires_grad,
+                train_data_idx=train_data_idx,
             )
             metrics_dict[granularity_label] = metrics
             loss_dict[granularity_label] = loss

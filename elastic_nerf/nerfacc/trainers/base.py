@@ -235,6 +235,7 @@ class NGPTrainer:
         # Precompute the granularities to sample for each step
         # (helps minimize randomness between runs).
         self.sampling_schedule = []
+        train_indices_to_sample = []
         for step in range(self.config.max_steps + 1):
             granularities_to_sample, granularity_loss_weight = (
                 self.sample_granularities(step)
@@ -242,6 +243,14 @@ class NGPTrainer:
             self.sampling_schedule.append(
                 (granularities_to_sample, granularity_loss_weight)
             )
+            # Precompute the train dataset indices for the granularities at each step.
+            train_indices_to_sample.append(
+                torch.randint(
+                    0, len(self.train_dataset), (len(granularities_to_sample),)
+                )
+            )
+
+        self.train_indices_to_sample = torch.tensor(train_indices_to_sample)
 
         self.validate_elastic_compatibility()
 
@@ -825,10 +834,11 @@ class NGPTrainer:
         self.eval()
         wandb.log({}, step=self.step, commit=True)
 
-    def get_train_data(self):
-        data = self.train_dataset[
-            torch.randint(0, len(self.train_dataset), (1,)).item()
-        ]
+    def get_train_data_idx(self, step: int, granularity_idx: int) -> int:
+        return int(self.train_indices_to_sample[step, granularity_idx].item())
+
+    def get_train_data(self, train_data_idx: int):
+        data = self.train_dataset[train_data_idx]
         rays, pixels, render_bkgd = data["rays"], data["pixels"], data["color_bkgd"]
 
         return rays, pixels, render_bkgd

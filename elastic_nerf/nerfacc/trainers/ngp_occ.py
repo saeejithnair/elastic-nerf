@@ -183,7 +183,7 @@ class NGPOccTrainer(NGPTrainer):
         )
 
     def train_granular_step(
-        self, elastic_width: int, granularity_loss_weight: float
+        self, elastic_width: int, granularity_loss_weight: float, train_data_idx: int
     ) -> Tuple[Optional[torch.Tensor], Dict[str, Any]]:
         """Perform a single training step on a single width."""
         if self.dataset.target_sample_batch_size > 0:
@@ -202,7 +202,7 @@ class NGPOccTrainer(NGPTrainer):
             )
             self.train_dataset.update_num_rays(num_rays)
 
-        rays, pixels, render_bkgd = self.get_train_data()
+        rays, pixels, render_bkgd = self.get_train_data(train_data_idx)
         kwargs = self.get_elastic_forward_kwargs(elastic_width)
 
         rgb, _, depth, n_rendering_samples = self.render(
@@ -282,8 +282,12 @@ class NGPOccTrainer(NGPTrainer):
             granularity_label = f"elastic_{elastic_width}"
             if i > 1:
                 torch.cuda.empty_cache()
+
+            train_data_idx = self.get_train_data_idx(self.step, i)
             loss, metrics = self.train_granular_step(
-                int(elastic_width), granularity_loss_weight
+                int(elastic_width),
+                granularity_loss_weight,
+                train_data_idx=train_data_idx,
             )
             metrics_dict[granularity_label] = metrics
 
