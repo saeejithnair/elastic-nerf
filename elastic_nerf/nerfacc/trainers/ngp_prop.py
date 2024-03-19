@@ -122,7 +122,6 @@ class NGPPropTrainer(NGPTrainer):
                 n_levels=5,
                 max_resolution=resolution,
                 base_mlp_width=self.config.hidden_dim,
-                head_mlp_width=self.config.hidden_dim,
             ).to(self.device)
             for resolution in self.dataset.prop_network_resolutions
         ]
@@ -159,6 +158,7 @@ class NGPPropTrainer(NGPTrainer):
             aabb=aabb,
             unbounded=self.dataset.unbounded,
             base_mlp_width=self.config.hidden_dim,
+            head_mlp_width=self.config.hidden_dim,
         ).to(self.device)
         optimizer = torch.optim.Adam(
             radiance_field.parameters(),
