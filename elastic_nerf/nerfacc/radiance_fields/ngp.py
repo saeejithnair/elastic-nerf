@@ -443,6 +443,9 @@ class NGPRadianceField(NGPField):
                     skip_layer=None,
                     output_enabled=True,
                 )
+                print(
+                    f"Using ElasticMLP for head width {head_mlp_width} with depth {self.head_depth}"
+                )
             else:
                 self.mlp_head = self.make_fused_head(width=head_mlp_width)
 
