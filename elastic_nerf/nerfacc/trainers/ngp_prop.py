@@ -365,3 +365,4 @@ class NGPPropTrainer(NGPTrainer):
         self.frozen["estimator"] = copy.deepcopy(self.estimator)
         self.frozen["radiance_field"] = copy.deepcopy(self.radiance_field)
         self.frozen["proposal_networks"] = copy.deepcopy(self.proposal_networks)
+        print(f"Froze modules at step {self.step}")

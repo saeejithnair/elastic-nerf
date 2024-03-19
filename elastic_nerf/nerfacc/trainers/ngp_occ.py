@@ -334,3 +334,4 @@ class NGPOccTrainer(NGPTrainer):
         self.frozen = {}
         self.frozen["estimator"] = copy.deepcopy(self.estimator)
         self.frozen["radiance_field"] = copy.deepcopy(self.radiance_field)
+        print(f"Froze modules at step {self.step}")
