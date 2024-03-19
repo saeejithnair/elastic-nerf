@@ -161,11 +161,11 @@ class NGPTrainer:
     def setup(self):
         set_random_seed(42)
 
-        # Set up the sampling schedule.
-        self.setup_sampling_schedule()
-
         # Set up the training and testing datasets
         self.train_dataset, self.test_dataset = self.setup_datasets()
+
+        # Set up the sampling schedule.
+        self.setup_sampling_schedule()
 
         self.initialize_model()
 
@@ -354,6 +354,7 @@ class NGPTrainer:
             device=self.device,
             **self.dataset.test_dataset_kwargs,
         )
+
         return train_dataset, test_dataset
 
     def get_aabb(self, estimator=None):
