@@ -185,6 +185,11 @@ class NGPTrainer:
             train_granularities.append(self.config.hidden_dim // (2**i))
         self.train_elastic_widths = torch.tensor(train_granularities)
 
+        if not self.use_elastic():
+            assert (
+                self.config.num_eval_elastic_widths == 1
+            ), "Elastic widths to eval should be 1 for non-elastic models."
+
         # If we only want to evaluate on the first n widths corresponding to the
         # hidden dimension used for training (this is useful for benchmarking a
         # smaller width representation of the baseline architecture.)
