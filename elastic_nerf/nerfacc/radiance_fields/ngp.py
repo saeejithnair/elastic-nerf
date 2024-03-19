@@ -144,6 +144,8 @@ class NGPRadianceFieldConfig(InstantiateConfig):
         )
     )
     """Base configuration if using an elastic MLP."""
+    head_depth: int = 2
+    """Depth of the head MLP."""
 
     @staticmethod
     def from_dict(data: dict) -> "NGPRadianceFieldConfig":
@@ -322,7 +324,7 @@ class NGPField(torch.nn.Module):
                 "activation": "ReLU",
                 "output_activation": "None",
                 "n_neurons": width,
-                "n_hidden_layers": 2,
+                "n_hidden_layers": self.head_depth,
             },
         )
         if params is not None:
@@ -427,11 +429,12 @@ class NGPRadianceField(NGPField):
             self.head_input_dim = (
                 self.direction_encoding.n_output_dims if self.use_viewdirs else 0
             ) + self.geo_feat_dim
+            self.head_depth = config.head_depth
             if self.config.use_elastic_head:
                 self.mlp_head: ElasticMLP = config.head.setup(
                     input_dim=self.head_input_dim,
                     output_dim=3,
-                    net_depth=2,
+                    net_depth=self.head_depth,
                     net_width=head_mlp_width,
                     skip_layer=None,
                     output_enabled=True,
