@@ -30,6 +30,9 @@ parameters:
   radiance-field.use-elastic:
     values:
       - False
+  radiance-field.use-elastic-head:
+    values:
+      - False
   radiance-field.base.bias-enabled:
     values:
       - False
