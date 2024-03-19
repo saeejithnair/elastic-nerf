@@ -471,7 +471,17 @@ class NGPRadianceField(NGPField):
         else:
             return density
 
-    def _query_rgb(self, dir, embedding, apply_act: bool = True):
+    def _query_rgb(
+        self,
+        dir,
+        embedding,
+        apply_act: bool = True,
+        active_neurons: Optional[int] = None,
+    ):
+        kwargs = {}
+        if active_neurons is not None:
+            kwargs["active_neurons"] = active_neurons
+
         # tcnn requires directions in the range [0, 1]
         if self.use_viewdirs:
             dir = (dir + 1.0) / 2.0
@@ -479,7 +489,11 @@ class NGPRadianceField(NGPField):
             h = torch.cat([d, embedding.reshape(-1, self.geo_feat_dim)], dim=-1)
         else:
             h = embedding.reshape(-1, self.geo_feat_dim)
-        rgb = self.mlp_head(h).reshape(list(embedding.shape[:-1]) + [3]).to(embedding)
+        rgb = (
+            self.mlp_head(h, **kwargs)
+            .reshape(list(embedding.shape[:-1]) + [3])
+            .to(embedding)
+        )
         if apply_act:
             rgb = torch.sigmoid(rgb)
         return rgb
@@ -501,7 +515,7 @@ class NGPRadianceField(NGPField):
             density, embedding = self.query_density(
                 positions, return_feat=True, **kwargs
             )
-            rgb = self._query_rgb(directions, embedding=embedding)
+            rgb = self._query_rgb(directions, embedding=embedding, **kwargs)
         return rgb, density  # type: ignore
 
     def make_fused_head(self, width: int, params: Optional[torch.Tensor] = None):
