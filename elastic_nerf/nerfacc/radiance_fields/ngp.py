@@ -129,7 +129,7 @@ class NGPRadianceFieldConfig(InstantiateConfig):
 
     _target: Type = field(default_factory=lambda: NGPRadianceField)
 
-    use_elastic: bool = False
+    use_elastic: bool = True
     """Whether to use an elastic MLP."""
     base: ElasticMLPConfig = field(
         default_factory=lambda: ElasticMLPConfig(
@@ -137,7 +137,7 @@ class NGPRadianceFieldConfig(InstantiateConfig):
         )
     )
     """Base configuration if using an elastic MLP."""
-    use_elastic_head: bool = False
+    use_elastic_head: bool = True
     head: ElasticMLPConfig = field(
         default_factory=lambda: ElasticMLPConfig(
             output_activation=None, bias_enabled=False
