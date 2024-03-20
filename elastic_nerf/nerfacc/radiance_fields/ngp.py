@@ -438,7 +438,7 @@ class NGPRadianceField(NGPField):
         active_neurons: Optional[int] = None,
     ):
         kwargs = {}
-        if active_neurons is not None:
+        if active_neurons is not None and self.config.use_elastic_head:
             kwargs["active_neurons"] = active_neurons
 
         # tcnn requires directions in the range [0, 1]
