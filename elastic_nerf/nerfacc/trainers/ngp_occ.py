@@ -247,7 +247,7 @@ class NGPOccTrainer(NGPTrainer):
         """Perform a single training step."""
         self.set_mode(train=True)
 
-        granularities_to_sample, granularity_loss_weight = self.sampling_schedule[
+        granularities_to_sample, granularity_loss_weights = self.sampling_schedule[
             self.step
         ]
 
@@ -280,6 +280,7 @@ class NGPOccTrainer(NGPTrainer):
         metrics_dict = {}
         for i, elastic_width in enumerate(granularities_to_sample):
             granularity_label = f"elastic_{elastic_width}"
+            granularity_loss_weight = float(granularity_loss_weights[i])
             if i > 1:
                 torch.cuda.empty_cache()
 

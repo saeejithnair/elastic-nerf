@@ -92,6 +92,8 @@ class NGPBaseTrainerConfig(PrintableConfig):
         "sequential",
     ] = "uniform"
     """Sampling strategy for widths."""
+    loss_weight_strategy: Literal["uniform", "matroyshka"] = "uniform"
+    """Loss upweighting strategy."""
     hidden_dim: int = 64
     """The hidden dimension of the MLP."""
     num_train_widths: int = 4
@@ -239,11 +241,11 @@ class NGPTrainer:
         self.sampling_schedule = []
         train_indices_to_sample = []
         for step in range(self.config.max_steps + 1):
-            granularities_to_sample, granularity_loss_weight = (
+            granularities_to_sample, granularity_loss_weights = (
                 self.sample_granularities(step)
             )
             self.sampling_schedule.append(
-                (granularities_to_sample, granularity_loss_weight)
+                (granularities_to_sample, granularity_loss_weights)
             )
             # Precompute the train dataset indices for the granularities at each step.
             if self.config.duplicate_train_batch_across_widths:
@@ -896,9 +898,27 @@ class NGPTrainer:
             replacement=False,
         )
         granularities_to_sample = self.train_elastic_widths[elastic_width_indices]
-        granularity_loss_weight = 1 / len(granularities_to_sample)
 
-        return granularities_to_sample, granularity_loss_weight
+        granularity_loss_weights = []
+        matroyshka_weights_map = {
+            8: 1,
+            16: math.sqrt(2),
+            32: 2,
+            64: math.sqrt(8),
+        }
+        for elastic_width in granularities_to_sample:
+            if self.config.loss_weight_strategy == "uniform":
+                granularity_loss_weights.append(1 / len(granularities_to_sample))
+            elif self.config.loss_weight_strategy == "matroyshka":
+                granularity_loss_weights.append(
+                    matroyshka_weights_map[int(elastic_width)]
+                )
+            else:
+                raise ValueError(
+                    f"Invalid loss weight strategy: {self.config.loss_weight_strategy}"
+                )
+
+        return granularities_to_sample, torch.tensor(granularity_loss_weights)
 
     def set_mode(self, train: bool = True):
         """Set the mode of the model."""

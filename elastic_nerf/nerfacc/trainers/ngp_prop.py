@@ -300,7 +300,7 @@ class NGPPropTrainer(NGPTrainer):
     ) -> Tuple[Dict[str, Union[float, int]], bool]:
         """Perform a single training step."""
         self.set_mode(train=True)
-        granularities_to_sample, granularity_loss_weight = self.sampling_schedule[
+        granularities_to_sample, granularity_loss_weights = self.sampling_schedule[
             self.step
         ]
 
@@ -314,6 +314,7 @@ class NGPPropTrainer(NGPTrainer):
                 torch.cuda.empty_cache()
             elastic_width = int(elastic_width)
             granularity_label = f"elastic_{elastic_width}"
+            granularity_loss_weight = float(granularity_loss_weights[i])
             train_data_idx = self.get_train_data_idx(self.step, i)
             loss, estimator_loss, metrics = self.train_granular_step(
                 int(elastic_width),
