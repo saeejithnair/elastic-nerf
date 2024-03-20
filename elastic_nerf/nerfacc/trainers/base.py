@@ -92,7 +92,7 @@ class NGPBaseTrainerConfig(PrintableConfig):
         "sequential",
     ] = "uniform"
     """Sampling strategy for widths."""
-    loss_weight_strategy: Literal["uniform", "matroyshka"] = "uniform"
+    loss_weight_strategy: Literal["uniform", "inv-uniform", "matroyshka"] = "uniform"
     """Loss upweighting strategy."""
     hidden_dim: int = 64
     """The hidden dimension of the MLP."""
@@ -909,6 +909,8 @@ class NGPTrainer:
         for elastic_width in granularities_to_sample:
             if self.config.loss_weight_strategy == "uniform":
                 granularity_loss_weights.append(1 / len(granularities_to_sample))
+            elif self.config.loss_weight_strategy == "inv-uniform":
+                granularity_loss_weights.append(1)
             elif self.config.loss_weight_strategy == "matroyshka":
                 granularity_loss_weights.append(
                     matroyshka_weights_map[int(elastic_width)]
