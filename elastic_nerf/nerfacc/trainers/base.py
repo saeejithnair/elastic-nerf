@@ -941,8 +941,8 @@ class NGPTrainer:
 
         granularity_loss_weights = torch.tensor(granularity_loss_weights)
         if self.config.normalize_loss_weights:
-            granularity_loss_weights = torch.nn.functional.normalize(
-                granularity_loss_weights
+            granularity_loss_weights = (
+                granularity_loss_weights / granularity_loss_weights.sum()
             )
         return granularities_to_sample, granularity_loss_weights
 
