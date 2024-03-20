@@ -110,7 +110,7 @@ class NGPBaseTrainerConfig(PrintableConfig):
     """Number of widths to use for evaluation."""
     num_eval_elastic_widths: Optional[int] = None
     """Number of widths to use for evaluation. If set, will use the first n widths used for training."""
-    max_steps: int = 80000
+    max_steps: int = 20000
     """Maximum number of training steps."""
     fused_eval: bool = True
     """Whether to convert elastic modules to TCNN Fused before eval."""
