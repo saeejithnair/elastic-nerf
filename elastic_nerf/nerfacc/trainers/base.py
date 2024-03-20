@@ -891,6 +891,12 @@ class NGPTrainer:
             32: 1.0 / math.sqrt(2),
             64: 1.0,
         }
+        exp_weights = [math.exp(i) for i in range(4)]
+        widths = [8, 16, 32, 64]
+        exp_weights_map = {width: weight for width, weight in zip(widths, exp_weights)}
+        exp_inv_weights_map = {
+            width: 1.0 / weight for width, weight in zip(widths, reversed(exp_weights))
+        }
         if self.config.loss_weight_strategy == "uniform":
             return 1 / num_widths_to_sample
         elif self.config.loss_weight_strategy == "uniform-inv":
@@ -899,6 +905,10 @@ class NGPTrainer:
             return matroyshka_weights_map[int(elastic_width)]
         elif self.config.loss_weight_strategy == "matroyshka-inv":
             return matroyshka_inv_weights_map[int(elastic_width)]
+        elif self.config.loss_weight_strategy == "exp":
+            return exp_weights_map[int(elastic_width)]
+        elif self.config.loss_weight_strategy == "exp-inv":
+            return exp_inv_weights_map[int(elastic_width)]
         else:
             raise ValueError(
                 f"Invalid loss weight strategy: {self.config.loss_weight_strategy}"
