@@ -1,0 +1,43 @@
+name: ngp_occ-mipnerf360-sampling
+project: elastic-nerf
+entity: saeejithn
+method: grid
+description: This performs a sweep over mipnerf360 dataset with nerfacc accelerated ngp occ model.
+parameters:
+  dataset-name:
+    value: mipnerf360
+  scene:
+    values:
+      - counter
+  sampling-strategy:
+    values:
+      - uniform
+      - exp-reverse
+  loss-weight-strategy:
+    values:
+      - uniform
+      - matroyshka
+      - exp
+      - exp-inv
+  radiance-field.use-elastic:
+    values:
+      - True
+  normalize-loss-weights:
+    values:
+      - True
+  radiance-field.use-elastic-head:
+    values:
+      - True
+      - False
+  num-train-widths:
+    value: 4
+  num-widths-to-sample:
+    values:
+      - 4
+      - 3
+      - 2
+
+command:
+  - python
+  - scripts/train/train_elastic_ngp_occ.py
+  - ${args}
