@@ -378,7 +378,9 @@ class NGPRadianceField(NGPField):
                 elastic_mlp=config.base,
                 net_width=base_mlp_width,
             )
-            print(f"Using ElasticMLPWithInputEncoding for width {base_mlp_width}")
+            print(
+                f"Using ElasticMLPWithInputEncoding for RadianceField base width {base_mlp_width}"
+            )
         else:
             self.mlp_base = self.make_fused_base(width=base_mlp_width)
         if self.geo_feat_dim > 0:
@@ -581,6 +583,9 @@ class NGPDensityField(NGPField):
                 encoding_config=self.encoding_config,
                 elastic_mlp=config.base,
                 net_width=base_mlp_width,
+            )
+            print(
+                f"Using ElasticMLPWithInputEncoding for DensityField base width {base_mlp_width}"
             )
         else:
             self.mlp_base = self.make_fused_base(width=base_mlp_width)
