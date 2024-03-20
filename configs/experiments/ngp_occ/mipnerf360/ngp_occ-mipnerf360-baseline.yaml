@@ -34,6 +34,7 @@ parameters:
   radiance-field.use-elastic-head:
     values:
       - False
+  
 command:
   - python
   - scripts/train/train_elastic_ngp_occ.py

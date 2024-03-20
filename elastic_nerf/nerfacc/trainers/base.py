@@ -98,7 +98,7 @@ class NGPBaseTrainerConfig(PrintableConfig):
     """The hidden dimension of the MLP."""
     num_train_widths: int = 4
     """Number of widths to use for training."""
-    duplicate_train_batch_across_widths: bool = False
+    duplicate_train_batch_across_widths: bool = True
     """Whether to duplicate the training batch across different widths."""
     num_widths_to_sample: int = 1
     """Number of widths to sample for each training step."""
