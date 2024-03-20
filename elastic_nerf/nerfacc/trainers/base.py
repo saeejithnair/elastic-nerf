@@ -96,6 +96,8 @@ class NGPBaseTrainerConfig(PrintableConfig):
         "uniform", "uniform-inv", "matroyshka", "matroyshka-inv"
     ] = "uniform"
     """Loss upweighting strategy."""
+    normalize_loss_weights: bool = False
+    """Whether to normalize the loss weights."""
     hidden_dim: int = 64
     """The hidden dimension of the MLP."""
     num_train_widths: int = 4
@@ -937,7 +939,12 @@ class NGPTrainer:
                 self.get_loss_weight(elastic_width, num_widths_to_sample)
             )
 
-        return granularities_to_sample, torch.tensor(granularity_loss_weights)
+        granularity_loss_weights = torch.tensor(granularity_loss_weights)
+        if self.config.normalize_loss_weights:
+            granularity_loss_weights = torch.nn.functional.normalize(
+                granularity_loss_weights
+            )
+        return granularities_to_sample, granularity_loss_weights
 
     def set_mode(self, train: bool = True):
         """Set the mode of the model."""
