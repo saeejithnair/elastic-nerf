@@ -93,7 +93,7 @@ class NGPBaseTrainerConfig(PrintableConfig):
     ] = "uniform"
     """Sampling strategy for widths."""
     loss_weight_strategy: Literal[
-        "uniform", "uniform-inv", "matroyshka", "matroyshka-inv"
+        "uniform", "uniform-inv", "matroyshka", "matroyshka-inv", "exp", "exp-inv"
     ] = "uniform"
     """Loss upweighting strategy."""
     normalize_loss_weights: bool = False
