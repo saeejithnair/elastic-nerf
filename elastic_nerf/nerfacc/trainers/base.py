@@ -874,15 +874,37 @@ class NGPTrainer:
         psnr = -10.0 * torch.log(mse_loss) / np.log(10.0)
         return loss, mse_loss, psnr
 
+    def get_loss_weight(self, elastic_width, num_widths_to_sample):
+        matroyshka_weights_map = {
+            8: 1,
+            16: math.sqrt(2),
+            32: 2,
+            64: math.sqrt(8),
+        }
+        if self.config.loss_weight_strategy == "uniform":
+            return 1 / num_widths_to_sample
+        elif self.config.loss_weight_strategy == "inv-uniform":
+            return 1
+        elif self.config.loss_weight_strategy == "matroyshka":
+            return matroyshka_weights_map[int(elastic_width)]
+        else:
+            raise ValueError(
+                f"Invalid loss weight strategy: {self.config.loss_weight_strategy}"
+            )
+
     def sample_granularities(self, step: int):
         """Sample widths for training."""
         if self.config.sampling_strategy == "sequential":
             # Sequentially sample the widths at each step.
             sampling_idx = step % len(self.train_elastic_widths)
-            granularity_loss_weight = 1
+            elastic_width = self.train_elastic_widths[sampling_idx]
+            # For sequential, we only sample a single width.
+            granularity_loss_weight = self.get_loss_weight(
+                elastic_width, num_widths_to_sample=1
+            )
             return (
-                torch.tensor([self.train_elastic_widths[sampling_idx]]),
-                granularity_loss_weight,
+                torch.tensor([elastic_width]),
+                torch.tensor([granularity_loss_weight]),
             )
 
         assert self.elastic_width_sampling_weights is not None, (
@@ -900,25 +922,10 @@ class NGPTrainer:
         granularities_to_sample = self.train_elastic_widths[elastic_width_indices]
 
         granularity_loss_weights = []
-        matroyshka_weights_map = {
-            8: 1,
-            16: math.sqrt(2),
-            32: 2,
-            64: math.sqrt(8),
-        }
         for elastic_width in granularities_to_sample:
-            if self.config.loss_weight_strategy == "uniform":
-                granularity_loss_weights.append(1 / len(granularities_to_sample))
-            elif self.config.loss_weight_strategy == "inv-uniform":
-                granularity_loss_weights.append(1)
-            elif self.config.loss_weight_strategy == "matroyshka":
-                granularity_loss_weights.append(
-                    matroyshka_weights_map[int(elastic_width)]
-                )
-            else:
-                raise ValueError(
-                    f"Invalid loss weight strategy: {self.config.loss_weight_strategy}"
-                )
+            granularity_loss_weights.append(
+                self.get_loss_weight(elastic_width, num_widths_to_sample)
+            )
 
         return granularities_to_sample, torch.tensor(granularity_loss_weights)
 
