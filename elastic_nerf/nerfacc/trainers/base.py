@@ -92,7 +92,9 @@ class NGPBaseTrainerConfig(PrintableConfig):
         "sequential",
     ] = "uniform"
     """Sampling strategy for widths."""
-    loss_weight_strategy: Literal["uniform", "inv-uniform", "matroyshka"] = "uniform"
+    loss_weight_strategy: Literal[
+        "uniform", "uniform-inv", "matroyshka", "matroyshka-inv"
+    ] = "uniform"
     """Loss upweighting strategy."""
     hidden_dim: int = 64
     """The hidden dimension of the MLP."""
@@ -881,12 +883,20 @@ class NGPTrainer:
             32: 2,
             64: math.sqrt(8),
         }
+        matroyshka_inv_weights_map = {
+            8: 1.0 / math.sqrt(8),
+            16: 1.0 / 2.0,
+            32: 1.0 / math.sqrt(2),
+            64: 1.0,
+        }
         if self.config.loss_weight_strategy == "uniform":
             return 1 / num_widths_to_sample
-        elif self.config.loss_weight_strategy == "inv-uniform":
+        elif self.config.loss_weight_strategy == "uniform-inv":
             return 1
         elif self.config.loss_weight_strategy == "matroyshka":
             return matroyshka_weights_map[int(elastic_width)]
+        elif self.config.loss_weight_strategy == "matroyshka-inv":
+            return matroyshka_inv_weights_map[int(elastic_width)]
         else:
             raise ValueError(
                 f"Invalid loss weight strategy: {self.config.loss_weight_strategy}"
