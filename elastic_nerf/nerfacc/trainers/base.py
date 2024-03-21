@@ -920,7 +920,7 @@ class NGPTrainer:
         """Adjusts the learning rate based on the number of samples."""
         if (
             self.config.duplicate_train_batch_across_widths
-            and self.config.duplicate_train_batch_across_widths
+            and self.config.adjust_lr_for_duplicate_train_batch
         ):
             # If we're duplicating the training batch across widths, this
             # may be the same as decreasing the batch size.
