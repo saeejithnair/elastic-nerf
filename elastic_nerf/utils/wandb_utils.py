@@ -81,7 +81,6 @@ class RunResult:
         wandb_cache_dir: Path,
         download_history: bool = False,
         tables: Optional[List[str]] = None,
-        get_weights_grads: bool = False,
     ):
         self.run_id = run.id
         self.run_name = run.name
@@ -90,10 +89,7 @@ class RunResult:
             wandb_cache_dir.mkdir(parents=True, exist_ok=True)
 
         self.wandb_cache_dir = wandb_cache_dir
-        self.results_cache_dir: Path = results_cache_dir/f"{run.id}"
-        # if (self.results_cache_dir/"config.yaml").exists():
-        #     with open(os.path.join(self.results_cache_dir, "config.yaml"), "r") as f:
-        #         # I'm confused :(
+        self.results_cache_dir: Path = results_cache_dir / f"{run.id}"
 
         try:
             self.config = run.config
@@ -107,47 +103,40 @@ class RunResult:
                         "Cache dir must be provided to download tables for a run."
                     )
                 self.tables = self.download_tables(run, tables, self.wandb_cache_dir)
-            if get_weights_grads:
-                if self.wandb_cache_dir is None:
-                    raise ValueError(
-                        "Cache dir must be provided to download weights and grads for a run."
-                    )
-                self.weights_grads = self.add_weights_grad(run, self.wandb_cache_dir)
-            self.checkpoints = self.add_checkpoint(run, self.wandb_cache_dir)
         except Exception as e:
             lu.error(f"An error occurred while fetching run {run.id}: {e}")
             raise e
-    
-    def add_weights_grad(self, result_dir, run_id):
-        directory = os.path.join(result_dir, run_id, "weights_grads")
-        # assume result_dir is /shared/results/elastic-nerf
-        file_paths = glob.glob(f"{directory}/*.pt")
 
-        weights_grads = {}
-        for file in file_paths:
-            filename = os.path.basename(file)
-            # example name: radiance_field_step_1000.pt
-            split_filename = filename.split("_step_")
-            model_name = split_filename[0]
-            step = int(split_filename[1].split(".")[0])
-            weights_grads[model_name] = {step: os.path.join(run_id, "weights_grads", filename)}
-        # TODO: change it to return relative starting from /results/elastic-nerf
-            # results_dir has all things saved during training, maybe we should download to it too
-            # cache_dir should have run results after it gets pickled
-            # everything should be relative to results_dir
+    # def add_weights_grad(self, result_dir, run_id):
+    #     directory = os.path.join(result_dir, run_id, "weights_grads")
+    #     # assume result_dir is /shared/results/elastic-nerf
+    #     file_paths = glob.glob(f"{directory}/*.pt")
 
-    def add_checkpoint(self, result_dir, run_id):
-        directory = os.path.join(result_dir, run_id, "checkpoints")
-        file_paths = glob.glob(f"{directory}/*.pt")
+    #     weights_grads = {}
+    #     for file in file_paths:
+    #         filename = os.path.basename(file)
+    #         # example name: radiance_field_step_1000.pt
+    #         split_filename = filename.split("_step_")
+    #         model_name = split_filename[0]
+    #         step = int(split_filename[1].split(".")[0])
+    #         weights_grads[model_name] = {step: os.path.join(run_id, "weights_grads", filename)}
+    #     # TODO: change it to return relative starting from /results/elastic-nerf
+    #         # results_dir has all things saved during training, maybe we should download to it too
+    #         # cache_dir should have run results after it gets pickled
+    #         # everything should be relative to results_dir
 
-        checkpoints = {}
-        for file in file_paths:
-            filename = os.path.basename(file)
-            # example name: 0tlyjl6x_ship_20000.pt
-            split_filename = filename.split("_")
-            run_id = split_filename[0]
-            step = int(split_filename[2].split(".")[0])
-            checkpoints[run_id] = {step: os.path.join(run_id, "checkpoints", filename)}
+    # def add_checkpoint(self, result_dir, run_id):
+    #     directory = os.path.join(result_dir, run_id, "checkpoints")
+    #     file_paths = glob.glob(f"{directory}/*.pt")
+
+    #     checkpoints = {}
+    #     for file in file_paths:
+    #         filename = os.path.basename(file)
+    #         # example name: 0tlyjl6x_ship_20000.pt
+    #         split_filename = filename.split("_")
+    #         run_id = split_filename[0]
+    #         step = int(split_filename[2].split(".")[0])
+    #         checkpoints[run_id] = {step: os.path.join(run_id, "checkpoints", filename)}
 
     def update_missing_attributes(
         self,
@@ -155,23 +144,12 @@ class RunResult:
         cache_dir: Optional[Path] = None,
         download_history: bool = False,
         tables: Optional[List[str]] = None,
-        download_weights_grads: bool = False,
     ) -> bool:
         attributes_updated = False
         # Update history if needed
         if download_history and not hasattr(self, "history"):
             print(f"Missing attribute history for run {run.id}.")
             self.history = self.download_history(run)
-            attributes_updated = True
-
-        # Update weights and gradients if needed
-        if download_weights_grads and not hasattr(self, "weights_grads"):
-            print(f"Missing attribute weights_grads for run {run.id}.")
-            if cache_dir is None:
-                raise ValueError(
-                    "Cache dir must be provided to download weights and grads for a run."
-                )
-            self.weights_grads = self.add_weights_grad(cache_dir, run)
             attributes_updated = True
 
         # Update tables if needed

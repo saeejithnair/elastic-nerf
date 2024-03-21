@@ -129,7 +129,7 @@ class NGPPropTrainer(NGPTrainer):
             itertools.chain(
                 *[p.parameters() for p in proposal_networks],
             ),
-            lr=self.dataset.optimizer_lr,
+            lr=self.compute_lr(self.dataset.optimizer_lr),
             eps=self.dataset.optimizer_eps,
             weight_decay=self.dataset.weight_decay,
         )
@@ -162,7 +162,7 @@ class NGPPropTrainer(NGPTrainer):
         ).to(self.device)
         optimizer = torch.optim.Adam(
             radiance_field.parameters(),
-            lr=self.dataset.optimizer_lr,
+            lr=self.compute_lr(self.dataset.optimizer_lr),
             eps=self.dataset.optimizer_eps,
             weight_decay=self.dataset.weight_decay,
         )

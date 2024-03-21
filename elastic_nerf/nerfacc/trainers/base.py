@@ -104,6 +104,8 @@ class NGPBaseTrainerConfig(PrintableConfig):
     """Number of widths to use for training."""
     duplicate_train_batch_across_widths: bool = True
     """Whether to duplicate the training batch across different widths."""
+    adjust_lr_for_duplicate_train_batch: bool = True
+    """Whether to adjust the learning rate for duplicated training batch."""
     num_widths_to_sample: int = 1
     """Number of widths to sample for each training step."""
     eval_elastic_widths: List[int] = field(default_factory=lambda: [64, 32, 16, 8])
@@ -913,6 +915,21 @@ class NGPTrainer:
             raise ValueError(
                 f"Invalid loss weight strategy: {self.config.loss_weight_strategy}"
             )
+
+    def compute_lr(self, optimizer_lr):
+        """Adjusts the learning rate based on the number of samples."""
+        if (
+            self.config.duplicate_train_batch_across_widths
+            and self.config.duplicate_train_batch_across_widths
+        ):
+            # If we're duplicating the training batch across widths, this
+            # may be the same as decreasing the batch size.
+            num_widths_to_sample = min(
+                len(self.train_elastic_widths), self.config.num_widths_to_sample
+            )
+            return optimizer_lr / float(num_widths_to_sample)
+        else:
+            return optimizer_lr
 
     def sample_granularities(self, step: int):
         """Sample widths for training."""
