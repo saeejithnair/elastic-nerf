@@ -1,4 +1,5 @@
 # %%
+from altair import value
 from mup import (
     MuReadout,
     make_base_shapes,
@@ -80,6 +81,9 @@ class MyModel(nn.Module):
 
 ### Then just train normally
 # %%
+
+import matplotlib.pyplot as plt
+
 base_model = MyModel(width=1)
 delta_model = MyModel(width=2)
 print(base_model)
@@ -89,85 +93,128 @@ print(_extract_shapes(delta_model))
 
 
 # %%
-def compute_expected_mup_stats(model, name, param):
+def compute_expected_scaling_ratios(model, name, param):
     if "weight" in name:
-        fan_in, fan_out = param.shape[-2], param.shape[-1]
+        fanin, fanout = param.infshape[-2], param.infshape[-1]
         if isinstance(getattr(model, name.split(".")[0]), nn.Linear):
             return {
-                "mup_init_var": (
-                    1 / fan_in if "readout" not in name else 1 / (fan_in**2)
-                ),
-                "mup_multiplier": 1,
-                "mup_lr_sgd": fan_out if "readout" not in name else 1,
-                "mup_lr_adam": 1 if "readout" not in name else 1 / fan_in,
+                "mup_init_var": fanin.width_mult(),
+                "mup_multiplier": fanin.width_mult() if "readout" in name else 1,
+                "mup_lr_sgd": 1,
+                "mup_lr_adam": fanin.width_mult(),
             }
         else:
             raise NotImplementedError(
                 f"Layer type not supported: {type(getattr(model, name.split('.')[0]))}"
             )
     elif "bias" in name:
-        fan_in = param.shape[-1]
+        fanin = param.infshape[-1]
         return {
-            "mup_init_var": 1 / fan_in,
-            "mup_multiplier": fan_in if "readout" not in name else 1,
-            "mup_lr_sgd": fan_in,
+            "mup_init_var": fanin.width_mult(),
+            "mup_multiplier": 1,
+            "mup_lr_sgd": 1 / fanin.width_mult(),
             "mup_lr_adam": 1,
         }
     else:
-        raise NotImplementedError(
-            f"Layer type not supported: {type(getattr(model, name.split('.')[0]))}"
-        )
+        raise NotImplementedError(f"Parameter type not supported: {name}")
 
 
-def compute_actual_mup_stats(model, optimizer, name, param):
-    if "weight" in name:
-        fan_in, fan_out = param.shape[-2], param.shape[-1]
-        if isinstance(getattr(model, name.split(".")[0]), nn.Linear):
-            return {
-                "mup_init_var": param.var().item(),
-                "mup_multiplier": 1,
-                "mup_lr_sgd": optimizer.param_groups[0]["lr"]
-                * (fan_out if "readout" not in name else 1),
-                "mup_lr_adam": optimizer.param_groups[0]["lr"]
-                * (1 if "readout" not in name else 1 / fan_in),
-            }
-        else:
-            raise NotImplementedError(
-                f"Layer type not supported: {type(getattr(model, name.split('.')[0]))}"
+def get_nested_attr(obj, attr_path):
+    attributes = attr_path.split(".")
+    for attr in attributes:
+        obj = getattr(obj, attr)
+    return obj
+
+
+def compute_actual_scaling_ratios(models, optimizers, name):
+    ratios = {}
+    for stat_name in ["mup_init_var", "mup_multiplier", "mup_lr_sgd", "mup_lr_adam"]:
+        ratios[stat_name] = []
+
+    for model, optimizer in zip(models, optimizers):
+        param = get_nested_attr(model, name)
+        if "weight" in name:
+            ratios["mup_init_var"].append(param.var().item())
+            ratios["mup_multiplier"].append(param.infshape.width_mult())
+            ratios["mup_lr_sgd"].append(
+                next(
+                    (
+                        group["lr"]
+                        for group in optimizer.param_groups
+                        if any(id(p) == id(param) for p in group["params"])
+                    ),
+                    None,
+                )
             )
-    elif "bias" in name:
-        fan_in = param.shape[-1]
-        return {
-            "mup_init_var": param.var().item(),
-            "mup_multiplier": fan_in if "readout" not in name else 1,
-            "mup_lr_sgd": optimizer.param_groups[0]["lr"] * fan_in,
-            "mup_lr_adam": optimizer.param_groups[0]["lr"],
-        }
-    else:
-        raise NotImplementedError(
-            f"Layer type not supported: {type(getattr(model, name.split('.')[0]))}"
-        )
+            ratios["mup_lr_adam"].append(
+                next(
+                    (
+                        group["lr"]
+                        for group in optimizer.param_groups
+                        if any(id(p) == id(param) for p in group["params"])
+                    ),
+                    None,
+                )
+            )
+        elif "bias" in name:
+            ratios["mup_init_var"].append(param.var().item())
+            ratios["mup_multiplier"].append(param.infshape.width_mult())
+            ratios["mup_lr_sgd"].append(
+                next(
+                    (
+                        group["lr"]
+                        for group in optimizer.param_groups
+                        if any(id(p) == id(param) for p in group["params"])
+                    ),
+                    None,
+                )
+            )
+            ratios["mup_lr_adam"].append(
+                next(
+                    (
+                        group["lr"]
+                        for group in optimizer.param_groups
+                        if any(id(p) == id(param) for p in group["params"])
+                    ),
+                    None,
+                )
+            )
+        else:
+            raise NotImplementedError(f"Parameter type not supported: {name}")
+
+    scaling_ratios = {}
+    for stat_name, values in ratios.items():
+        if values[0] == 0:
+            scaling_ratios[stat_name] = [0 for value in values]
+        else:
+            scaling_ratios[stat_name] = [value / values[0] for value in values]
+
+    return scaling_ratios, ratios
 
 
 # %%
-def print_stats(layer_stats):
-    for stat_name, stat_value in layer_stats.items():
-        print(f"    {stat_name}: {stat_value:.4f}")
+def plot_scaling_ratios(expected_ratios, actual_ratios, widths, name, mode):
+    fig, axs = plt.subplots(1, len(expected_ratios), figsize=(20, 5))
+    fig.suptitle(f"{mode} for {name}", fontsize=16)
 
+    for i, (stat_name, expected_ratio) in enumerate(expected_ratios.items()):
+        # axs[i].plot(
+        #     widths, [expected_ratio] * len(widths), label="Expected", linestyle="--"
+        # )
+        axs[i].plot(widths, actual_ratios[stat_name], label="Actual")
+        axs[i].set_xlabel("Width")
+        axs[i].set_ylabel("Scaling Ratio")
+        axs[i].set_title(stat_name)
+        axs[i].legend()
 
-def evaluate_mup(model, optimizer):
-    for name, param in model.named_parameters():
-        print(f"Parameter: {name}")
-        expected_stats = compute_expected_mup_stats(model, name, param)
-        actual_stats = compute_actual_mup_stats(model, optimizer, name, param)
-        print("  Expected:")
-        print_stats(expected_stats)
-        print("  Actual:")
-        print_stats(actual_stats)
+    plt.tight_layout()
+    plt.show()
 
 
 # %%
-widths = [3, 10, 30, 100]
+widths = list(range(3, 4096+3, 32))
+models = []
+optimizers = []
 
 for width in widths:
     base_model = MyModel(width=1)
@@ -180,11 +227,27 @@ for width in widths:
         elif "bias" in name:
             mup.init.uniform_(param, 0, 0)
         else:
-            raise NotImplementedError(
-                f"Layer type not supported: {type(getattr(model, name.split('.')[0]))}"
-            )
-    optimizer = MuSGD(model.parameters(), lr=0.1)
-    print(f"\nModel width: {width}")
-    evaluate_mup(model, optimizer)
+            raise NotImplementedError(f"Parameter type not supported: {name}")
+    optimizer = MuAdam(model.parameters(), lr=0.1)
+    models.append(model)
+    optimizers.append(optimizer)
+
+expected = {}
+actual_scaling = {}
+actual_ratios = {}
+for name, param in models[0].named_parameters():
+    print(f"\nParameter: {name}")
+    expected_ratios = compute_expected_scaling_ratios(models[0], name, param)
+    actual_scaling_ratios, ratios = compute_actual_scaling_ratios(
+        models, optimizers, name
+    )
+    plot_scaling_ratios(
+        expected_ratios, actual_scaling_ratios, widths, name, "Scaling Ratios"
+    )
+    plot_scaling_ratios(expected_ratios, ratios, widths, name, "Hyperparameters")
+
+    expected[name] = expected_ratios
+    actual_scaling[name] = actual_scaling_ratios
+    actual_ratios[name] = ratios
 
 # %%
