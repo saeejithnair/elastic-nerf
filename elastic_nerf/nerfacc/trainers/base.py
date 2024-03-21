@@ -104,7 +104,7 @@ class NGPBaseTrainerConfig(PrintableConfig):
     """Number of widths to use for training."""
     duplicate_train_batch_across_widths: bool = True
     """Whether to duplicate the training batch across different widths."""
-    adjust_lr_for_duplicate_train_batch: bool = True
+    adjust_lr_for_duplicate_train_batch: bool = False
     """Whether to adjust the learning rate for duplicated training batch."""
     num_widths_to_sample: int = 1
     """Number of widths to sample for each training step."""

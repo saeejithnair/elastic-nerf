@@ -4,3 +4,6 @@
 [submodule "third-party/tiny-cuda-nn"]
 	path = third-party/tiny-cuda-nn
 	url = https://github.com/nvlabs/tiny-cuda-nn
+[submodule "third-party/mup"]
+	path = third-party/mup
+	url = git@github.com:saeejithnair/mup.git
