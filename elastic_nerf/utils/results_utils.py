@@ -6,6 +6,13 @@ import plotly.express as px
 import plotly.graph_objects as go
 
 
+def get_nested_attr(obj, attr_path, split_token="."):
+    attributes = attr_path.split(split_token)
+    for attr in attributes:
+        obj = getattr(obj, attr)
+    return obj
+
+
 def filter_columns_by_substring(
     df: pd.DataFrame, substrings: List[str]
 ) -> pd.DataFrame:
