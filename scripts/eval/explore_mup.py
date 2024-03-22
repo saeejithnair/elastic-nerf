@@ -120,7 +120,7 @@ def compute_expected_scaling_ratios(param, lr, base_init_var):
             scale = fanin if isinstance(fanin, int) else fanin.dim
             print(f"Input weight; fanin: {fanin}, fanout: {fanout}")
             return {
-                "init_var": base_init_var*1/fanin.dim,
+                "init_var": base_init_var * 1 / fanin.dim,
                 "multiplier": fanout.dim,
                 "lr_adam": lr,
             }
@@ -216,7 +216,7 @@ def plot_scaling_ratios(expected_ratios, actual_ratios, widths, name, mode):
 
 
 # %%
-widths = list(range(32, 4096 + 3, 512))
+widths = list(range(3, 1024))
 models = []
 optimizers = []
 lr = 0.1
@@ -226,9 +226,14 @@ for width in widths:
     delta_model = MyModel(width=2)
     model = MyModel(width=width)
     set_base_shapes(model, base_model, delta=delta_model)
+    metadata = []
     for name, param in model.named_parameters():
         if "weight" in name:
-            mup.init.xavier_normal_(param)
+            initialized_param, debug = mup.init.xavier_normal_(param)
+            actual_std = initialized_param.std().item()
+            actual_var = initialized_param.var().item()
+            details = f"{width};{name};{debug};{actual_std};{actual_var}"
+            metadata.append((param, details))
         elif "bias" in name:
             mup.init.uniform_(param, 0, 0)
         else:
@@ -236,8 +241,13 @@ for width in widths:
     optimizer = MuAdam(model.parameters(), lr=lr)
     models.append(model)
     optimizers.append(optimizer)
+    for i, (param, details) in enumerate(metadata):
+        for group in optimizer.param_groups:
+            if any(id(p) == id(param) for p in group["params"]):
+                opt_details = f"{lr};{group['lr']};{group['betas']};{group['eps']}"
+                print(f"{details};{opt_details}")
 
-
+# %%
 actual_scaling = {}
 actual_ratios = {}
 init_std = 1.0
