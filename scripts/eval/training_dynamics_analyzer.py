@@ -207,8 +207,18 @@ class TrainingDynamicsAnalyzer:
                 ax.set_ylabel(f"{norm_type} Norm")
 
             # Which config parameters do we care about? Scene, # Samples, Sampling method
+            # Which models were elastic?
+            elastic_model_name = ""
+            if self.config.radiance_field.use_elastic:
+                elastic_model_name += "Radiance Field Base"
+            if self.config.radiance_field.use_elastic_head:
+                elastic_model_name += "+Head"
+            if isinstance(self.config, NGPPropTrainerConfig):
+                if self.config.density_field.use_elastic:
+                    elastic_model_name += ", Density Field Base"
+
             fig.suptitle(
-                f"Training Dynamics for Run {self.run_id} | Scene: {self.config.scene.capitalize()} | # Samples: {self.config.num_widths_to_sample} | Sampling Strategy: {self.config.sampling_strategy.capitalize()}"
+                f"Training Dynamics for Run {self.run_id} | Scene: {self.config.scene.capitalize()} | Elastic Blocks: {elastic_model_name} | # Samples: {self.config.num_widths_to_sample} | Sampling Strategy: {self.config.sampling_strategy.capitalize()} | Loss Weight Strategy: {self.config.loss_weight_strategy.capitalize()}",
             )
             fig.savefig(
                 self.output_dir / f"{self.run_id}_{param_type}_norms.jpg", dpi=300
@@ -218,7 +228,15 @@ class TrainingDynamicsAnalyzer:
 # %%
 class SweepDynamicsPlotter:
 
-    def __init__(self, sweep_id, log_dir, wandb_dir, results_cache_dir, model_type):
+    def __init__(
+        self,
+        sweep_id,
+        log_dir,
+        wandb_dir,
+        results_cache_dir,
+        model_type,
+        max_runs_to_process=None,
+    ):
         self.sweep_id = sweep_id
         self.sweep = wu.fetch_sweep(sweep_id)
         self.log_dir = log_dir
@@ -242,7 +260,8 @@ class SweepDynamicsPlotter:
         if not self.output_dir.exists():
             self.output_dir.mkdir(parents=True, exist_ok=True)
 
-        for run in tqdm(self.sweep.runs, leave=True):
+        max_runs_to_process = max_runs_to_process or len(self.sweep.runs)
+        for run in tqdm(self.sweep.runs[:max_runs_to_process], leave=True):
             self.run_summaries.append(wu.RunResult.download_summary(run))
             self.compute_training_dynamics(run.id)
             print(f"Computed training dynamics for run {run.id}")
@@ -277,6 +296,8 @@ class SweepDynamicsPlotter:
         # E.g. "radiance_field_step_10500.pt" -> ('radiance_field', 10500)
         weights_grads_info = []
         for f in weights_grads_files:
+            if "training_dynamics" in f.stem:
+                continue
             model, step = f.stem.split("_step_")
             step = int(step)
             weights_grads_info.append((model, step))
@@ -341,20 +362,23 @@ class SweepDynamicsPlotter:
             self.get_weights_grads_dir(run_id, self.results_cache_dir)
             / "training_dynamics.pt"
         )
+
+        tda = TrainingDynamicsAnalyzer(
+            max_width=64,
+            models=models,
+            run_id=run_id,
+            config=trainer.config,
+            sweep_id=self.sweep_id,
+        )
         if training_dynamics_path.exists():
             # Load from cached file
             training_dynamics = torch.load(training_dynamics_path)
             weight_norms = training_dynamics["weight_norms"]
             grad_norms = training_dynamics["grad_norms"]
+            steps = sorted(list(run_results["weights_grads"]["radiance_field"]))
+            self.training_steps.append(steps)
+            self.configs.append(trainer.config)
         else:
-            tda = TrainingDynamicsAnalyzer(
-                max_width=64,
-                models=models,
-                run_id=run_id,
-                config=trainer.config,
-                sweep_id=self.sweep_id,
-            )
-
             for model_name in models:
                 print(f"Parsing weights and grads for model {model_name}")
                 module_name = model_name.split("/")[0]
@@ -373,10 +397,10 @@ class SweepDynamicsPlotter:
                 },
                 training_dynamics_path,
             )
+            self.training_steps.append(tda.training_steps)
+            self.configs.append(tda.config)
 
         self.run_ids.append(run_id)
-        self.training_steps.append(tda.training_steps)
-        self.configs.append(tda.config)
         for param_name in weight_norms:
             if param_name not in self.sweep_results:
                 self.sweep_results[param_name] = {"weights": {}, "grads": {}}
@@ -408,6 +432,9 @@ class SweepDynamicsPlotter:
         )
         for param_name in self.sweep_results:
             ncols = len(self.sweep_results[param_name][param_type])
+            param_name_parts = param_name.split("/")
+            layer_name = param_name_parts[-1]
+            module_name = "/".join(param_name_parts[: len(param_name_parts) - 1])
             # Increase figure height to account for row titles
             fig_height = figsize_scales[1] * nrows + offset * nrows
             fig = plt.figure(
@@ -415,7 +442,7 @@ class SweepDynamicsPlotter:
                 figsize=(figsize_scales[0] * ncols, fig_height),
             )
             fig.suptitle(
-                f"Training Dynamics for Sweep {self.sweep_id}",
+                f"Training Dynamics for Sweep {self.sweep_id} | Block: {module_name}",
                 fontsize="large",
                 weight="bold",
                 color="blue",
@@ -464,32 +491,44 @@ class SweepDynamicsPlotter:
                     )
                     cb.ax.minorticks_off()
                     ax.set_title(
-                        f"{norm_type} Norm vs. Steps for {param_name}: {param_type.capitalize()}"
+                        f"{norm_type} Norm vs. Steps for {layer_name}: {param_type.capitalize()}"
                     )
                     ax.set_xlabel("Training Step")
                     ax.set_ylabel(f"{norm_type} Norm")
             fig.savefig(
                 self.output_dir
-                / f"{self.sweep_id}_{param_type}_{param_name}_norms.jpg",
+                / f"{self.sweep_id}_{param_type}_{param_name.replace('/', '-')}_norms.jpg",
                 dpi=300,
             )
 
 
 # %%
-def main(sweep_id: str, model_type: Literal["ngp_occ", "ngp_prop"]):
+def main(
+    sweep_id: str,
+    model_type: Literal["ngp_occ", "ngp_prop"],
+    max_runs: Optional[int] = None,
+):
     log_dir = Path("/home/user/shared/results/elastic-nerf")
     wandb_dir = Path("/home/user/shared/wandb_cache/elastic-nerf")
     results_cache_dir = Path("/home/user/shared/results/elastic-nerf")
     sdp = SweepDynamicsPlotter(
-        sweep_id, log_dir, wandb_dir, results_cache_dir, model_type
+        sweep_id,
+        log_dir,
+        wandb_dir,
+        results_cache_dir,
+        model_type,
+        max_runs_to_process=max_runs,
     )
     sdp.plot_sweep_dynamics(figsize_scales=(8, 5), param_type="weights")
     sdp.plot_sweep_dynamics(figsize_scales=(8, 5), param_type="grads")
 
 
 # %%
-if __name__ == "__main__":
-    tyro.extras.set_accent_color("bright_yellow")
-    tyro.cli(main)
+main("qfkjdvv2", "ngp_occ", 2)
+
+# %%
+# if __name__ == "__main__":
+#     tyro.extras.set_accent_color("bright_yellow")
+#     tyro.cli(main)
 
 # %%

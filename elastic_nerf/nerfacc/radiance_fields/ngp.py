@@ -540,6 +540,25 @@ class NGPRadianceField(NGPField):
             self.mlp_head = self.mlp_head.load_fused(elastic_width)
             print(f"Replaced head elastic MLP with fused MLP for width {elastic_width}")
 
+    def get_param_groups(self):
+        elastic_lr_params = []
+        non_elastic_lr_params = []
+        params = super().named_parameters()
+        for name, param in params:
+            if "hidden_layers" in name:
+                if "0" in name:
+                    non_elastic_lr_params.append(param)
+                else:
+                    # Only the hidden_layers with inf x inf dimensions have elastic learning rates
+                    elastic_lr_params.append(param)
+            else:
+                non_elastic_lr_params.append(param)
+
+        return [
+            {"params": non_elastic_lr_params, "elastic_lr": False},
+            {"params": elastic_lr_params, "elastic_lr": True},
+        ]
+
 
 class NGPDensityField(NGPField):
     """Instance-NGP Density Field used for resampling"""

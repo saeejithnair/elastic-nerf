@@ -27,7 +27,7 @@ from nerfacc.estimators.prop_net import PropNetEstimator, get_proposal_requires_
 from nerfstudio.configs.config_utils import convert_markup_to_ansi
 from nerfstudio.scripts.downloads.download_data import BlenderDownload
 from torchmetrics.functional import structural_similarity_index_measure
-
+from elastic_nerf.nerfacc.radiance_fields.mlp import ElasticMLP
 import wandb
 from elastic_nerf.nerfacc.datasets.nerf_360_v2 import SubjectLoader as MipNerf360Loader
 from elastic_nerf.nerfacc.datasets.nerf_synthetic import (
@@ -160,31 +160,44 @@ class NGPPropTrainer(NGPTrainer):
             base_mlp_width=self.config.hidden_dim,
             head_mlp_width=self.config.hidden_dim,
         ).to(self.device)
+        radiance_field_param_groups = radiance_field.get_param_groups()
         optimizer = torch.optim.Adam(
-            radiance_field.parameters(),
+            radiance_field_param_groups,
             lr=self.compute_lr(self.dataset.optimizer_lr),
             eps=self.dataset.optimizer_eps,
             weight_decay=self.dataset.weight_decay,
         )
-        scheduler = torch.optim.lr_scheduler.ChainedScheduler(
-            [
-                torch.optim.lr_scheduler.LinearLR(
+        schedulers = [
+            torch.optim.lr_scheduler.LinearLR(
+                optimizer,
+                start_factor=self.dataset.scheduler_start_factor,
+                total_iters=self.dataset.scheduler_total_iters,
+            ),
+            torch.optim.lr_scheduler.MultiStepLR(
+                optimizer,
+                milestones=[
+                    self.config.max_steps // 2,
+                    self.config.max_steps * 3 // 4,
+                    self.config.max_steps * 9 // 10,
+                ],
+                gamma=self.dataset.scheduler_gamma,
+            ),
+        ]
+        if self.config.use_elastic_lr:
+            elastic_lr_schedules = []
+            for param_group in radiance_field_param_groups:
+                if "elastic_lr" in param_group and param_group["elastic_lr"] is True:
+                    elastic_lr_schedules.append(self.get_elastic_lr())
+                else:
+                    elastic_lr_schedules.append(lambda step: 1.0)
+            schedulers.append(
+                torch.optim.lr_scheduler.LambdaLR(
                     optimizer,
-                    start_factor=self.dataset.scheduler_start_factor,
-                    total_iters=self.dataset.scheduler_total_iters,
-                ),
-                torch.optim.lr_scheduler.MultiStepLR(
-                    optimizer,
-                    milestones=[
-                        self.config.max_steps // 2,
-                        self.config.max_steps * 3 // 4,
-                        self.config.max_steps * 9 // 10,
-                    ],
-                    gamma=self.dataset.scheduler_gamma,
-                ),
-            ]
-        )
+                    elastic_lr_schedules,
+                )
+            )
 
+        scheduler = torch.optim.lr_scheduler.ChainedScheduler(schedulers)
         self.proposal_networks = proposal_networks
         self.prop_optimizer = prop_optimizer
         self.prop_scheduler = prop_scheduler
@@ -211,6 +224,22 @@ class NGPPropTrainer(NGPTrainer):
         if self.config.density_field.use_elastic:
             kwargs["active_neurons_prop"] = elastic_width
         return kwargs
+
+    def get_elastic_lr(self):
+        # base_64 = base_8 * (1/fanin) = base_8 * (1/fanin_64)
+        # width_64_lr = base_8_lr * (fanin_8/fanin_64)
+        # width_8_lr = base_64_lr * (fanin_64/fanin_8)
+        # elastic_width_lr = base_64_lr * (fanin_64 / elastic_width)
+        def get_lr_multiplier(step):
+            granularities_to_sample, granularity_loss_weights = self.sampling_schedule[
+                step
+            ]
+            assert len(granularities_to_sample) == 1
+            elastic_width = int(granularities_to_sample[0])
+            # TODO: Don't hardcode, get base width dynamically
+            return 64 / elastic_width
+
+        return get_lr_multiplier
 
     def render(
         self,
@@ -261,14 +290,25 @@ class NGPPropTrainer(NGPTrainer):
             estimator_loss = estimator_loss * granularity_loss_weight
 
         loss, mse_loss, psnr = self.compute_losses(rgb, pixels)
+        elastic_loss = 0
+        metrics = {}
+        if self.config.use_elastic_loss:
+            for model in self.models_to_watch.values():
+                for n, m in model.named_modules():
+                    if isinstance(m, ElasticMLP):
+                        spectral_loss = m.get_spectral_loss(elastic_width)
+                        metrics[f"elastic_loss/{n}"] = float(spectral_loss)
+                        elastic_loss += spectral_loss
+            metrics.update({"elastic_loss": float(elastic_loss), "render_loss": float(loss)})
+            loss += (elastic_loss/100)
         loss = loss * granularity_loss_weight
-        metrics = {
+        metrics.update({
             "loss": float(loss),
             "mse_loss": float(mse_loss),
             "psnr": float(psnr),
             "max_depth": float(depth.max()),
             "num_rays": int(len(pixels)),
-        }
+        })
 
         return loss, estimator_loss, metrics
 

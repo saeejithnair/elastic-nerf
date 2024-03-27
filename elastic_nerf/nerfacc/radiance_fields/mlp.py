@@ -405,6 +405,17 @@ class ElasticMLP(nn.Module):
 
         return granular_hidden_layers_state_dict
 
+    def get_spectral_loss(self, active_neurons):
+        elastic_state_dict = self.state_dict(active_neurons=active_neurons)
+        loss = 0
+        for name, param in elastic_state_dict.items():
+            fanout, fanin = param.shape
+            variance = torch.var(param)
+            desired_variance = (1 / float(fanin)) * min(1, fanout / fanin)
+            loss += (variance - desired_variance) ** 2
+
+        return loss
+
     def state_dict(
         self, active_neurons=None, destination=None, prefix="", keep_vars=False
     ):

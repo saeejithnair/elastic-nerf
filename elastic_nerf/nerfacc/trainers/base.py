@@ -106,6 +106,10 @@ class NGPBaseTrainerConfig(PrintableConfig):
     """Whether to duplicate the training batch across different widths."""
     adjust_lr_for_duplicate_train_batch: bool = False
     """Whether to adjust the learning rate for duplicated training batch."""
+    use_elastic_loss: bool = True
+    """Whether to use elastic loss."""
+    use_elastic_lr: bool = True
+    """Whether to use elastic learning rate."""
     num_widths_to_sample: int = 1
     """Number of widths to sample for each training step."""
     eval_elastic_widths: List[int] = field(default_factory=lambda: [64, 32, 16, 8])
@@ -983,7 +987,7 @@ class NGPTrainer:
 
     def load_weights_grads(self, weights_grads_path: Path, module_name: str):
         ckpt = torch.load(weights_grads_path)
-        module = getattr(self, module_name)
+        module = self.models_to_watch[module_name]
         module.load_state_dict(ckpt["params"])
 
         for name, param in module.named_parameters():
