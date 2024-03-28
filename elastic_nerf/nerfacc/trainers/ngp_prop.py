@@ -237,7 +237,7 @@ class NGPPropTrainer(NGPTrainer):
             assert len(granularities_to_sample) == 1
             elastic_width = int(granularities_to_sample[0])
             # TODO: Don't hardcode, get base width dynamically
-            return 64 / elastic_width
+            return 8 / elastic_width
 
         return get_lr_multiplier
 
@@ -299,16 +299,20 @@ class NGPPropTrainer(NGPTrainer):
                         spectral_loss = m.get_spectral_loss(elastic_width)
                         metrics[f"elastic_loss/{n}"] = float(spectral_loss)
                         elastic_loss += spectral_loss
-            metrics.update({"elastic_loss": float(elastic_loss), "render_loss": float(loss)})
-            loss += (elastic_loss/100)
+            metrics.update(
+                {"elastic_loss": float(elastic_loss), "render_loss": float(loss)}
+            )
+            loss += elastic_loss / 100
         loss = loss * granularity_loss_weight
-        metrics.update({
-            "loss": float(loss),
-            "mse_loss": float(mse_loss),
-            "psnr": float(psnr),
-            "max_depth": float(depth.max()),
-            "num_rays": int(len(pixels)),
-        })
+        metrics.update(
+            {
+                "loss": float(loss),
+                "mse_loss": float(mse_loss),
+                "psnr": float(psnr),
+                "max_depth": float(depth.max()),
+                "num_rays": int(len(pixels)),
+            }
+        )
 
         return loss, estimator_loss, metrics
 

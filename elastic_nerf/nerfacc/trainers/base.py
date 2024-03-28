@@ -106,9 +106,9 @@ class NGPBaseTrainerConfig(PrintableConfig):
     """Whether to duplicate the training batch across different widths."""
     adjust_lr_for_duplicate_train_batch: bool = False
     """Whether to adjust the learning rate for duplicated training batch."""
-    use_elastic_loss: bool = True
+    use_elastic_loss: bool = False
     """Whether to use elastic loss."""
-    use_elastic_lr: bool = True
+    use_elastic_lr: bool = False
     """Whether to use elastic learning rate."""
     num_widths_to_sample: int = 1
     """Number of widths to sample for each training step."""
