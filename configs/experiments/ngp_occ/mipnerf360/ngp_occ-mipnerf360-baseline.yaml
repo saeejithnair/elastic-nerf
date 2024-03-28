@@ -30,8 +30,15 @@ parameters:
       - 1
   radiance-field.use-elastic:
     values:
-      - False
+      - True
   radiance-field.use-elastic-head:
+    values:
+      - True
+  radiance-field.head-depth:
+    values:
+      - 1
+      - 2
+  fused-eval:
     values:
       - False
   
