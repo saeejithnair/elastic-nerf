@@ -10,6 +10,7 @@ lightning
 lovely-tensors
 lpips
 matplotlib
+mup
 nbdev
 ninja
 plotly

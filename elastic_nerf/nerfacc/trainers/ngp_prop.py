@@ -52,6 +52,8 @@ from elastic_nerf.nerfacc.configs.datasets.mipnerf360 import (
     MipNerf360DatasetPropConfig,
 )
 from elastic_nerf.nerfacc.trainers.base import NGPBaseTrainerConfig, NGPTrainer
+from mup import MuAdam, set_base_shapes
+import mup
 
 
 @dataclass
@@ -112,6 +114,59 @@ class NGPPropTrainer(NGPTrainer):
             or self.config.density_field.use_elastic
         )
 
+    def init_mup_proposal_nets(self, proposal_networks, aabb):
+        base_width = 8
+        base_models = [
+            self.config.density_field.setup(
+                aabb=aabb,
+                unbounded=self.dataset.unbounded,
+                n_levels=5,
+                max_resolution=resolution,
+                base_mlp_width=base_width,
+            ).to(self.device)
+            for resolution in self.dataset.prop_network_resolutions
+        ]
+        delta_models = [
+            self.config.density_field.setup(
+                aabb=aabb,
+                unbounded=self.dataset.unbounded,
+                n_levels=5,
+                max_resolution=resolution,
+                base_mlp_width=base_width + 1,
+            ).to(self.device)
+            for resolution in self.dataset.prop_network_resolutions
+        ]
+        for base, delta, model in zip(base_models, delta_models, proposal_networks):
+            set_base_shapes(model, base, delta=delta)
+            for name, param in model.named_parameters():
+                if "weight" in name:
+                    mup.init.xavier_normal_(param)
+                else:
+                    print(f"Skipping initialization for {name}")
+                    continue
+
+    def init_mup_radiance_field(self, radiance_field, aabb):
+        base_width = 8
+        base_model = self.config.radiance_field.setup(
+            aabb=aabb,
+            unbounded=self.dataset.unbounded,
+            base_mlp_width=base_width,
+            head_mlp_width=base_width,
+        ).to(self.device)
+        delta_model = self.config.radiance_field.setup(
+            aabb=aabb,
+            unbounded=self.dataset.unbounded,
+            base_mlp_width=base_width + 1,
+            head_mlp_width=base_width + 1,
+        ).to(self.device)
+        set_base_shapes(radiance_field, base_model, delta=delta_model)
+        for name, param in radiance_field.named_parameters():
+            if "weight" in name:
+                mup.init.xavier_normal_(param)
+            else:
+                print(f"Skipping initialization for {name}")
+                continue
+
     def initialize_model(self):
         """Initialize the radiance field and optimizer."""
         aabb = torch.tensor([*self.dataset.aabb_coeffs], device=self.device)
@@ -125,13 +180,14 @@ class NGPPropTrainer(NGPTrainer):
             ).to(self.device)
             for resolution in self.dataset.prop_network_resolutions
         ]
-        prop_optimizer = torch.optim.Adam(
+        self.init_mup_proposal_nets(proposal_networks, aabb)
+        prop_optimizer = MuAdam(
             itertools.chain(
                 *[p.parameters() for p in proposal_networks],
             ),
             lr=self.compute_lr(self.dataset.optimizer_lr),
             eps=self.dataset.optimizer_eps,
-            weight_decay=self.dataset.weight_decay,
+            # weight_decay=self.dataset.weight_decay,
         )
         prop_scheduler = torch.optim.lr_scheduler.ChainedScheduler(
             [
@@ -160,12 +216,14 @@ class NGPPropTrainer(NGPTrainer):
             base_mlp_width=self.config.hidden_dim,
             head_mlp_width=self.config.hidden_dim,
         ).to(self.device)
-        radiance_field_param_groups = radiance_field.get_param_groups()
-        optimizer = torch.optim.Adam(
+        self.init_mup_radiance_field(radiance_field, aabb)
+        # radiance_field_param_groups = radiance_field.get_param_groups()
+        radiance_field_param_groups = radiance_field.parameters()
+        optimizer = MuAdam(
             radiance_field_param_groups,
             lr=self.compute_lr(self.dataset.optimizer_lr),
             eps=self.dataset.optimizer_eps,
-            weight_decay=self.dataset.weight_decay,
+            # weight_decay=self.dataset.weight_decay,
         )
         schedulers = [
             torch.optim.lr_scheduler.LinearLR(

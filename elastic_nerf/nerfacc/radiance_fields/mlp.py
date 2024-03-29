@@ -10,6 +10,7 @@ import math
 from dataclasses import dataclass, field, fields
 from typing import Callable, Dict, Literal, Optional, Type, Union
 
+from cycler import V
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
@@ -17,6 +18,8 @@ from gonas.configs.base_config import FlexibleInstantiateConfig, InstantiateConf
 from typing_extensions import NotRequired, TypedDict
 import tinycudann as tcnn
 from elastic_nerf.modules.elastic_mlp import GranularNorm, GranularNormConfig
+from mup import MuReadout, set_base_shapes
+import mup
 
 
 def get_field_granular_state_dict(
@@ -290,35 +293,38 @@ class ElasticMLP(nn.Module):
             else:
                 in_features = layer_width
         if self.output_enabled:
-            self.output_layer = nn.Linear(
+            self.output_layer = MuReadout(
                 in_features, self.output_dim, bias=bias_enabled
             )
         else:
             # Note that while the assignment RHS is labelled as `in_features`,
             # this was last set to `layer_width` in the loop above.
             self.output_dim = in_features
+            raise ValueError("Output layer must be enabled.")
 
-        self.initialize()
+        # self.initialize()
 
     def initialize(self):
-        def init_func_hidden(m):
-            if isinstance(m, nn.Linear):
-                if self.hidden_init is not None:
-                    self.hidden_init(m.weight)
-                if self.bias_enabled and self.bias_init is not None:
-                    self.bias_init(m.bias)
+        raise ValueError("Initialize with mup manually please")
 
-        self.hidden_layers.apply(init_func_hidden)
-        if self.output_enabled:
+    # def init_func_hidden(m):
+    #     if isinstance(m, nn.Linear):
+    #         if self.hidden_init is not None:
+    #             self.hidden_init(m.weight)
+    #         if self.bias_enabled and self.bias_init is not None:
+    #             self.bias_init(m.bias)
 
-            def init_func_output(m):
-                if isinstance(m, nn.Linear):
-                    if self.output_init is not None:
-                        self.output_init(m.weight)
-                    if self.bias_enabled and self.bias_init is not None:
-                        self.bias_init(m.bias)
+    # self.hidden_layers.apply(init_func_hidden)
+    # if self.output_enabled:
 
-            self.output_layer.apply(init_func_output)
+    #     def init_func_output(m):
+    #         if isinstance(m, nn.Linear):
+    #             if self.output_init is not None:
+    #                 self.output_init(m.weight)
+    #             if self.bias_enabled and self.bias_init is not None:
+    #                 self.bias_init(m.bias)
+
+    # self.output_layer.apply(init_func_output)
 
     def forward_hidden(self, x, active_neurons, input_dim, use_granular_norm=False):
         inputs = x

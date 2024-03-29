@@ -15,7 +15,8 @@ from collections import defaultdict
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
 from typing import Any, Dict, List, Literal, Optional, Sequence, Tuple, Type, Union
-
+from mup import MuAdam, set_base_shapes
+import mup
 import numpy as np
 import torch
 import torch.nn.functional as F
@@ -106,6 +107,26 @@ class NGPOccTrainer(NGPTrainer):
     def use_elastic(self):
         return self.config.radiance_field.use_elastic
 
+    def init_mup_radiance_field(self, radiance_field, aabb):
+        base_width = 8
+        base_model = self.config.radiance_field.setup(
+            aabb=aabb,
+            base_mlp_width=base_width,
+            head_mlp_width=base_width,
+        ).to(self.device)
+        delta_model = self.config.radiance_field.setup(
+            aabb=aabb,
+            base_mlp_width=base_width + 1,
+            head_mlp_width=base_width + 1,
+        ).to(self.device)
+        set_base_shapes(radiance_field, base_model, delta=delta_model)
+        for name, param in radiance_field.named_parameters():
+            if "weight" in name:
+                mup.init.xavier_normal_(param)
+            else:
+                print(f"Skipping initialization for {name}")
+                continue
+
     def initialize_model(self):
         """Initialize the radiance field and optimizer."""
         aabb = torch.tensor([*self.dataset.aabb_coeffs], device=self.device)
@@ -116,16 +137,18 @@ class NGPOccTrainer(NGPTrainer):
         ).to(self.device)
 
         grad_scaler = torch.cuda.amp.GradScaler(2**10)
+        radiance_field_aabb = self.get_aabb(estimator)
         radiance_field: NGPRadianceField = self.config.radiance_field.setup(
-            aabb=self.get_aabb(estimator),
+            aabb=radiance_field_aabb,
             base_mlp_width=self.config.hidden_dim,
             head_mlp_width=self.config.hidden_dim,
         ).to(self.device)
-        optimizer = torch.optim.Adam(
+        self.init_mup_radiance_field(radiance_field, radiance_field_aabb)
+        optimizer = MuAdam(
             radiance_field.parameters(),
             lr=self.compute_lr(self.dataset.optimizer_lr),
             eps=self.dataset.optimizer_eps,
-            weight_decay=self.dataset.weight_decay,
+            # weight_decay=self.dataset.weight_decay,
         )
         scheduler = torch.optim.lr_scheduler.ChainedScheduler(
             [
