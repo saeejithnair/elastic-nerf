@@ -81,6 +81,8 @@ class NGPBaseTrainerConfig(PrintableConfig):
     """Which scene to use."""
     model_path: Optional[Path] = None
     """The path of the pretrained model."""
+    seed: int = 42
+    """The random seed."""
     sampling_strategy: Literal[
         "uniform",
         "exp-optimal",
@@ -171,7 +173,7 @@ class NGPTrainer:
         self.device = torch.device(config.device)
 
     def setup(self):
-        set_random_seed(42)
+        set_random_seed(self.config.seed)
 
         # Set up the training and testing datasets
         self.train_dataset, self.test_dataset = self.setup_datasets()

@@ -41,6 +41,11 @@ parameters:
   fused-eval:
     values:
       - False
+  seed:
+    values:
+      - 42
+      - 27
+      - 1234
   
 command:
   - python
