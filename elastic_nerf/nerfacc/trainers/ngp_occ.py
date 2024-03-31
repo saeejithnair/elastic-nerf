@@ -108,21 +108,25 @@ class NGPOccTrainer(NGPTrainer):
         return self.config.radiance_field.use_elastic
 
     def init_mup_radiance_field(self, radiance_field, aabb):
-        base_width = 8
-        base_model = self.config.radiance_field.setup(
-            aabb=aabb,
-            base_mlp_width=base_width,
-            head_mlp_width=base_width,
-        ).to(self.device)
-        delta_model = self.config.radiance_field.setup(
-            aabb=aabb,
-            base_mlp_width=base_width + 1,
-            head_mlp_width=base_width + 1,
-        ).to(self.device)
-        set_base_shapes(radiance_field, base_model, delta=delta_model)
+        if self.config.use_mup:
+            base_width = 8
+            base_model = self.config.radiance_field.setup(
+                aabb=aabb,
+                base_mlp_width=base_width,
+                head_mlp_width=base_width,
+            ).to(self.device)
+            delta_model = self.config.radiance_field.setup(
+                aabb=aabb,
+                base_mlp_width=base_width + 1,
+                head_mlp_width=base_width + 1,
+            ).to(self.device)
+            set_base_shapes(radiance_field, base_model, delta=delta_model)
+
         for name, param in radiance_field.named_parameters():
-            if "weight" in name:
+            if self.config.use_mup and "weight" in name:
                 mup.init.xavier_normal_(param)
+            elif 'weight' in name:
+                torch.nn.init.xavier_normal_(param)
             else:
                 print(f"Skipping initialization for {name}")
                 continue
@@ -144,7 +148,8 @@ class NGPOccTrainer(NGPTrainer):
             head_mlp_width=self.config.hidden_dim,
         ).to(self.device)
         self.init_mup_radiance_field(radiance_field, radiance_field_aabb)
-        optimizer = MuAdam(
+        optimizer_type = MuAdam if self.config.use_mup else torch.optim.Adam
+        optimizer = optimizer_type(
             radiance_field.parameters(),
             lr=self.compute_lr(self.dataset.optimizer_lr),
             eps=self.dataset.optimizer_eps,

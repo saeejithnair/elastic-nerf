@@ -112,6 +112,8 @@ class NGPBaseTrainerConfig(PrintableConfig):
     """Whether to use elastic loss."""
     use_elastic_lr: bool = False
     """Whether to use elastic learning rate."""
+    use_mup: bool = False
+    """Whether to use Maximal Update Parameterization."""
     num_widths_to_sample: int = 1
     """Number of widths to sample for each training step."""
     eval_elastic_widths: List[int] = field(default_factory=lambda: [64, 32, 16, 8])

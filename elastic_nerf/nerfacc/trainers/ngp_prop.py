@@ -146,23 +146,27 @@ class NGPPropTrainer(NGPTrainer):
                     continue
 
     def init_mup_radiance_field(self, radiance_field, aabb):
-        base_width = 8
-        base_model = self.config.radiance_field.setup(
-            aabb=aabb,
-            unbounded=self.dataset.unbounded,
-            base_mlp_width=base_width,
-            head_mlp_width=base_width,
-        ).to(self.device)
-        delta_model = self.config.radiance_field.setup(
-            aabb=aabb,
-            unbounded=self.dataset.unbounded,
-            base_mlp_width=base_width + 1,
-            head_mlp_width=base_width + 1,
-        ).to(self.device)
-        set_base_shapes(radiance_field, base_model, delta=delta_model)
+        if self.config.use_mup:
+            base_width = 8
+            base_model = self.config.radiance_field.setup(
+                aabb=aabb,
+                unbounded=self.dataset.unbounded,
+                base_mlp_width=base_width,
+                head_mlp_width=base_width,
+            ).to(self.device)
+            delta_model = self.config.radiance_field.setup(
+                aabb=aabb,
+                unbounded=self.dataset.unbounded,
+                base_mlp_width=base_width + 1,
+                head_mlp_width=base_width + 1,
+            ).to(self.device)
+            set_base_shapes(radiance_field, base_model, delta=delta_model)
+
         for name, param in radiance_field.named_parameters():
-            if "weight" in name:
+            if self.config.use_mup and "weight" in name:
                 mup.init.xavier_normal_(param)
+            elif "weight" in name:
+                torch.nn.init.xavier_normal_(param)
             else:
                 print(f"Skipping initialization for {name}")
                 continue
@@ -219,7 +223,8 @@ class NGPPropTrainer(NGPTrainer):
         self.init_mup_radiance_field(radiance_field, aabb)
         # radiance_field_param_groups = radiance_field.get_param_groups()
         radiance_field_param_groups = radiance_field.parameters()
-        optimizer = MuAdam(
+        optimizer_type = MuAdam if self.config.use_mup else torch.optim.Adam
+        optimizer = optimizer_type(
             radiance_field_param_groups,
             lr=self.compute_lr(self.dataset.optimizer_lr),
             eps=self.dataset.optimizer_eps,
