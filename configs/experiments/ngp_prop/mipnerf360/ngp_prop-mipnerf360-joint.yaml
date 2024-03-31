@@ -21,12 +21,17 @@ parameters:
   radiance-field.use-elastic:
     values:
       - True
+  radiance-field.use-elastic-head:
+    values:
+      - True
   num-train-widths:
-    value: 4
+    values:
+      - 4
+  normalize-loss-weights:
+    values:
+      - True
   num-widths-to-sample:
     values:
-      - 2
-      - 3
       - 4
   density-field.use-elastic:
     values:
