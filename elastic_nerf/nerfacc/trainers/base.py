@@ -991,8 +991,14 @@ class NGPTrainer:
 
     def load_weights_grads(self, weights_grads_path: Path, module_name: str):
         ckpt = torch.load(weights_grads_path)
-        module = self.models_to_watch[module_name]
-        module.load_state_dict(ckpt["params"])
+        try:
+            module = self.models_to_watch[module_name]
+            module.load_state_dict(ckpt["params"])
+        except Exception as e:
+            print(
+                f"Error loading weights and grads for {module_name} from {ckpt.keys()} into module {module}"
+            )
+            raise e
 
         for name, param in module.named_parameters():
             if name in ckpt["gradients"]:
@@ -1002,7 +1008,9 @@ class NGPTrainer:
                     grad = grad.to(param.dtype)
                     param.grad = grad
                 except Exception as e:
-                    print(f"param.dtype = {param.dtype}, grad = {grad}, param.grad = {param.grad}")
+                    print(
+                        f"param.dtype = {param.dtype}, grad = {grad}, param.grad = {param.grad}"
+                    )
                     raise e
 
     def freeze(self):

@@ -305,17 +305,19 @@ class SweepDynamicsPlotter:
         # Parse weights_grads files based on the step number and model.
         # E.g. "radiance_field_step_10500.pt" -> ('radiance_field', 10500)
         weights_grads_info = []
+        weights_grads_files_filtered = []
         for f in weights_grads_files:
             if "training_dynamics" in f.stem:
                 continue
             model, step = f.stem.split("_step_")
             step = int(step)
             weights_grads_info.append((model, step))
+            weights_grads_files_filtered.append(f)
 
         # Create a dictionary of {model: {step -> weights_grads file}}
         weights_grads_dict = defaultdict(dict)
         for i, (model, step) in enumerate(weights_grads_info):
-            weights_grads_dict[model][step] = weights_grads_files[i]
+            weights_grads_dict[model][step] = weights_grads_files_filtered[i]
 
         return weights_grads_dict
 
