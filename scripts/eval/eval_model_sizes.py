@@ -108,7 +108,11 @@ def generate_param_tables(params_dict):
 # %%
 # Evaluate NGP-Prop and NGP-Occ models across specified widths
 ngp_prop_config = NGPPropTrainerConfig(
-    enable_logging=False, fused_eval=True, device="cpu"
+    enable_logging=False,
+    fused_eval=False,
+    device="cpu",
+    scene="counter",
+    dataset_name="mipnerf360",
 )
 ngp_prop_config.radiance_field.use_elastic = True
 ngp_prop_config.radiance_field.use_elastic_head = True
@@ -116,7 +120,11 @@ ngp_prop_config.density_field.use_elastic = True
 ngp_prop_trainer = ngp_prop_config.setup()
 
 ngp_occ_config = NGPOccTrainerConfig(
-    enable_logging=False, fused_eval=True, device="cpu"
+    enable_logging=False,
+    fused_eval=False,
+    device="cpu",
+    scene="counter",
+    dataset_name="mipnerf360",
 )
 ngp_occ_config.radiance_field.use_elastic = True
 ngp_occ_trainer = ngp_occ_config.setup()
@@ -125,7 +133,8 @@ ngp_occ_trainer = ngp_occ_config.setup()
 modules = ngp_prop_trainer.get_modules_for_eval(8)
 
 # %%
-widths = range(1, 65, 1)
+# widths = range(8, 65, 8)
+widths = [8, 16, 32, 64]
 ngp_occ_info = {width: ngp_occ_trainer.get_modules_for_eval(width) for width in widths}
 
 ngp_prop_info = {
@@ -143,4 +152,124 @@ plot_module_params(ngp_prop_params)
 # Generate tables
 generate_param_tables(ngp_occ_params)
 generate_param_tables(ngp_prop_params)
+# %%
+
+table_cols = [
+    "Width",
+    "Radiance Field",
+    "Proposal Network 1",
+    "Proposal Network 2",
+    "Total",
+]
+table_data = []
+base_width = 64
+base_params = {}
+for width in widths[::-1]:
+    table_row = [width]
+    total = 0
+    for module_name, width_params in ngp_prop_params.items():
+        if module_name == "radiance_field":
+            if width == base_width:
+                base_params[module_name] = width_params[base_width]
+                table_row.append(width_params[base_width])
+            else:
+                reduction = width_params[width] / base_params[module_name]
+                table_row.append(f"{width_params[width]} ({1/reduction:.2f}x)")
+            total += width_params[width]
+        elif module_name == "proposal_networks":
+            if width == base_width:
+                base_params[f"{width}_0"] = width_params[f"{base_width}_0"]
+                base_params[f"{width}_1"] = width_params[f"{base_width}_1"]
+                table_row.append(width_params[f"{base_width}_0"])
+                table_row.append(width_params[f"{base_width}_1"])
+            else:
+                reduction_0 = (
+                    width_params[f"{width}_0"] / base_params[f"{base_width}_0"]
+                )
+                reduction_1 = (
+                    width_params[f"{width}_1"] / base_params[f"{base_width}_1"]
+                )
+                table_row.append(f"{width_params[f'{width}_0']} ({1/reduction_0:.2f}x)")
+                table_row.append(f"{width_params[f'{width}_1']} ({1/reduction_1:.2f}x)")
+            total += width_params[f"{width}_0"] + width_params[f"{width}_1"]
+
+    if width == base_width:
+        base_params["total"] = total
+        table_row.append(total)
+    else:
+        table_row.append(f"{total} ({1/(total / base_params['total']):.2f}x)")
+
+    table_data.append(table_row)
+
+prop_df = pd.DataFrame(table_data, columns=table_cols)
+print(prop_df.to_latex(index=False))
+# %%
+table_cols = [
+    "Width",
+    "Radiance Field",
+    "Total",
+]
+table_data = []
+base_width = 64
+base_params = {}
+for width in widths[::-1]:
+    table_row = [width]
+    total = 0
+    for module_name, width_params in ngp_occ_params.items():
+        if module_name == "radiance_field":
+            if width == base_width:
+                base_params[module_name] = width_params[base_width]
+                table_row.append(width_params[base_width])
+            else:
+                reduction = width_params[width] / base_params[module_name]
+                table_row.append(f"{width_params[width]} ({1/reduction:.2f}x)")
+            total += width_params[width]
+    if width == base_width:
+        base_params["total"] = total
+        table_row.append(total)
+    else:
+        table_row.append(f"{total} ({1/(total / base_params['total']):.2f}x)")
+
+    table_data.append(table_row)
+
+occ_df = pd.DataFrame(table_data, columns=table_cols)
+print(occ_df.to_latex(index=False))
+
+# %%
+occ_cols = ["Radiance Field", "Total"]
+prop_cols = ["Radiance Field", "Proposal Network 1", "Proposal Network 2", "Total"]
+table_cols = ["Width"] + occ_cols + prop_cols
+
+header_row1 = [
+    "\multicolumn{1}{c}{} & \multicolumn{2}{c|}{NGP Occ} & \\multicolumn{4}{c}{NGP Prop} \\\\",
+]
+header_row2 = ["\\textbf{Width}"] + table_cols[1:]
+header = (
+    " & ".join(header_row1)
+    + " \\midrule \n"
+    + " & ".join(header_row2)
+    + " \\\\ \\midrule"
+)
+table_data = []
+for width in widths[::-1]:
+    row = "\\textbf{" + f"{width}" + "}"
+    for c in occ_cols:
+        row += f" & {occ_df.query(f'Width == {width}')[c].iloc[0]}"
+    for c in prop_cols:
+        row += f" & {prop_df.query(f'Width == {width}')[c].iloc[0]}"
+    row += " \\\\\n"
+    table_data.append(row)
+table_body = " \\\\n".join([" ".join([row for row in table_data])]) + " \\\\"
+final_table = (
+    "\\begin{table*}[h]\n\\centering\n\\small\n"
+    "\\caption{Combined Baseline PSNR after 20k steps of training for NGP Occ and NGP Prop models at different widths across scenes from the MipNeRF-360 dataset}\n"
+    "\\label{tab:combined_params}\n"
+    "\\begin{tabular}{lcc|cccc}\n\\toprule\n"
+    + header
+    + "\n"
+    + table_body
+    + "\n\\bottomrule\n"
+    "\\end{tabular}\n\\end{table*}"
+)
+print(final_table)
 # %%

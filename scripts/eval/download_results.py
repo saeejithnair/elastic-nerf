@@ -4,13 +4,22 @@ from pathlib import Path
 import pandas as pd
 
 sweep_mappings = {
-    "2uxektzo": "ngp_occ-mipnerf360-baseline",
-    "xxjsfkbw": "ngp_prop-mipnerf360-baseline",
+    # "2uxektzo": "ngp_occ-mipnerf360-baseline",
+    "kebumdc0": "ngp_occ-mipnerf360-baseline",
+    # "xxjsfkbw": "ngp_prop-mipnerf360-baseline",
+    "8w0wks0x": "ngp_prop-mipnerf360-baseline",
     "qfkjdvv2": "ngp_occ-mipnerf360-sampling_single",
     "hy03dx0e": "ngp_occ-mipnerf360-sampling",
+    "wsxh6gjo": "ngp_prop-mipnerf360-sampling",
+    "8ishbvau": "ngp_prop-mipnerf360-sampling_single",
+    "b674pjcs": "ngp_occ-mipnerf360-baseline_head_depth1",
+    "58hgroe5": "ngp_prop-mipnerf360-baseline_head_depth1",
+    "c6g1mc5g": "ngp_occ-mipnerf360-baseline-mup",
+    "ccrwhsr5": "ngp_prop-mipnerf360-baseline-mup",
 }
+
 tables = ["EvalResultsSummarytable"]
-sweeps = ["2uxektzo", "xxjsfkbw", "qfkjdvv2", "hy03dx0e"]
+sweeps = sweep_mappings.keys()
 results_cache_dir = Path("/home/user/shared/results/elastic-nerf")
 sweep_results = {}
 
@@ -36,6 +45,10 @@ for sweep_name in sweep_results:
         history = run.history
         history["sweep_id"] = sweep_name
         history["run_id"] = run.run_id
+        history["model_type"] = (
+            "ngp_prop" if "prop" in sweep_mappings[sweep_name] else "ngp_occ"
+        )
+        history["sweep_name"] = sweep_mappings[sweep_name]
         for key in flat_config:
             try:
                 history[key] = str(flat_config[key])
@@ -50,5 +63,7 @@ final_df = pd.concat(all_history, ignore_index=True)
 
 
 # %%
-final_df.to_csv(f"{'_'.join(sweeps)}_all_results.csv", index=False)
+fp = f"{'_'.join(sweeps)}_all_results.csv"
+final_df.to_csv(fp, index=False)
+print(f"Saved results to {fp}")
 # %%

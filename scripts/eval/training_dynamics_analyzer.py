@@ -19,6 +19,8 @@ from matplotlib.colors import ListedColormap
 from elastic_nerf.utils import wandb_utils as wu
 from elastic_nerf.utils import results_utils as ru
 import tyro
+import matplotlib.backends.backend_pdf
+from matplotlib.backends.backend_pdf import PdfPages
 
 sys.path.append(str(Path(__file__).resolve().parents[2]))
 
@@ -36,7 +38,6 @@ class TrainingDynamicsAnalyzer:
         sweep_id: str,
         width_step: int = 1,
     ):
-        self.max_width = max_width
         self.training_steps = []
         self.norm_types = {
             "L1": 1,
@@ -47,6 +48,7 @@ class TrainingDynamicsAnalyzer:
         self.run_id = run_id
         self.sweep_id = sweep_id
         self.config = config
+        self.max_width = min(max_width, config.hidden_dim)
         self.output_dir = (
             Path("/home/user/workspace/elastic-nerf/generated/training_dynamics")
             / sweep_id
@@ -133,10 +135,15 @@ class TrainingDynamicsAnalyzer:
     def compute_and_store_norms(self, model: ElasticMLP, model_name: str, step: int):
         self.training_steps.append(step)
 
+        model = model.to(torch.device("cpu"))
         # Slicing the state dict only once per step, as it is common for all norm types
-        sliced_weight_state_dicts = [
-            model.state_dict(active_neurons=width) for width in self.widths
-        ]
+        try:
+            sliced_weight_state_dicts = [
+                model.state_dict(active_neurons=width) for width in self.widths
+            ]
+        except Exception as e:
+            print(f"Failed to slice weights from {model}.")
+            raise e
         self.compute_norms_from_state_dict(
             sliced_weight_state_dicts, self.weight_norms, model_name
         )
@@ -236,6 +243,7 @@ class SweepDynamicsPlotter:
         results_cache_dir,
         model_type,
         max_runs_to_process=None,
+        refresh_cache=False,
     ):
         self.sweep_id = sweep_id
         self.sweep = wu.fetch_sweep(sweep_id)
@@ -243,6 +251,7 @@ class SweepDynamicsPlotter:
         self.wandb_dir = wandb_dir
         self.results_cache_dir = results_cache_dir
         self.model_type = model_type
+        self.refresh_cache = refresh_cache
         self.run_ids = []
         self.sweep_results = {}
         self.training_steps = []
@@ -260,8 +269,9 @@ class SweepDynamicsPlotter:
         if not self.output_dir.exists():
             self.output_dir.mkdir(parents=True, exist_ok=True)
 
-        max_runs_to_process = max_runs_to_process or len(self.sweep.runs)
-        for run in tqdm(self.sweep.runs[:max_runs_to_process], leave=True):
+        sweep_runs = [run for run in self.sweep.runs if run.state == "finished"]
+        max_runs_to_process = max_runs_to_process or len(sweep_runs)
+        for run in tqdm(sweep_runs[:max_runs_to_process], leave=True):
             self.run_summaries.append(wu.RunResult.download_summary(run))
             self.compute_training_dynamics(run.id)
             print(f"Computed training dynamics for run {run.id}")
@@ -328,65 +338,89 @@ class SweepDynamicsPlotter:
         )
 
         config = logged_results["config"]
+        try:
+            ckpt_path = logged_results["checkpoints"][20000]
+        except Exception as e:
+            print(
+                f"Failed to load checkpoint for run {run_id} from logged results {logged_results['checkpoints']}."
+            )
+            raise e
         if self.model_type == "ngp_occ":
             trainer = NGPOccTrainer.load_trainer(
                 config,
                 log_dir=self.log_dir,
                 wandb_dir=self.wandb_dir,
-                ckpt_path=logged_results["checkpoints"][20000],
+                ckpt_path=ckpt_path,
             )
         else:
             trainer = NGPPropTrainer.load_trainer(
                 config,
                 log_dir=self.log_dir,
                 wandb_dir=self.wandb_dir,
-                ckpt_path=logged_results["checkpoints"][20000],
+                ckpt_path=ckpt_path,
             )
         return trainer, logged_results
 
     def compute_training_dynamics(self, run_id):
-        trainer, run_results = self.create_trainer(run_id)
-        models = {}
-        if trainer.config.radiance_field.use_elastic:
-            models["radiance_field/mlp_base/elastic_mlp"] = (
-                trainer.radiance_field.mlp_base.elastic_mlp
-            )
-        if trainer.config.radiance_field.use_elastic_head:
-            models["radiance_field/mlp_head"] = trainer.radiance_field.mlp_head
-        if hasattr(trainer.config, "density_field"):
-            if trainer.config.density_field.use_elastic:
-                models["density_field/mlp_base/elastic_mlp"] = (
-                    trainer.density_field.mlp_base.elastic_mlp
-                )
         training_dynamics_path = (
             self.get_weights_grads_dir(run_id, self.results_cache_dir)
             / "training_dynamics.pt"
         )
 
-        tda = TrainingDynamicsAnalyzer(
-            max_width=64,
-            models=models,
-            run_id=run_id,
-            config=trainer.config,
-            sweep_id=self.sweep_id,
-        )
-        if training_dynamics_path.exists():
+        if not self.refresh_cache and training_dynamics_path.exists():
             # Load from cached file
             training_dynamics = torch.load(training_dynamics_path)
             weight_norms = training_dynamics["weight_norms"]
             grad_norms = training_dynamics["grad_norms"]
-            steps = sorted(list(run_results["weights_grads"]["radiance_field"]))
+            steps = training_dynamics["training_steps"]
             self.training_steps.append(steps)
-            self.configs.append(trainer.config)
+            self.configs.append(training_dynamics["config"])
+            # torch.save(
+            #     {
+            #         "weight_norms": weight_norms,
+            #         "grad_norms": grad_norms,
+            #         "training_steps": steps,
+            #         "config": trainer.config,
+            #         "model_type": self.model_type,
+            #     },
+            #     training_dynamics_path,
+            # )
         else:
+            trainer, run_results = self.create_trainer(run_id)
+            models = {}
+            if trainer.config.radiance_field.use_elastic:
+                models["radiance_field/mlp_base/elastic_mlp"] = (
+                    trainer.radiance_field.mlp_base.elastic_mlp
+                )
+            if trainer.config.radiance_field.use_elastic_head:
+                models["radiance_field/mlp_head"] = trainer.radiance_field.mlp_head
+            if hasattr(trainer.config, "density_field"):
+                if trainer.config.density_field.use_elastic:
+                    models["proposal_net_0/mlp_base/elastic_mlp"] = (
+                        trainer.proposal_networks[0].mlp_base.elastic_mlp
+                    )
+                    models["proposal_net_1/mlp_base/elastic_mlp"] = (
+                        trainer.proposal_networks[1].mlp_base.elastic_mlp
+                    )
+
+            tda = TrainingDynamicsAnalyzer(
+                max_width=64,
+                models=models,
+                run_id=run_id,
+                config=trainer.config,
+                sweep_id=self.sweep_id,
+            )
             for model_name in models:
                 print(f"Parsing weights and grads for model {model_name}")
-                module_name = model_name.split("/")[0]
+                model_name_parts = model_name.split("/")
+                module_name = model_name_parts[0]
+                submodule_name = ".".join(model_name_parts[1:])
                 steps = sorted(list(run_results["weights_grads"][module_name]))
                 for step in tqdm(steps):
                     ckpt = run_results["weights_grads"][module_name][step]
                     trainer.load_weights_grads(ckpt, module_name)
-                    submodule = ru.get_nested_attr(trainer, model_name, split_token="/")
+                    module = trainer.models_to_watch[module_name]
+                    submodule = ru.get_nested_attr(module, submodule_name)
                     tda.compute_and_store_norms(submodule, model_name, step)
             weight_norms = tda.weight_norms
             grad_norms = tda.grad_norms
@@ -394,6 +428,9 @@ class SweepDynamicsPlotter:
                 {
                     "weight_norms": weight_norms,
                     "grad_norms": grad_norms,
+                    "training_steps": steps,
+                    "config": trainer.config,
+                    "model_type": self.model_type,
                 },
                 training_dynamics_path,
             )
@@ -424,12 +461,14 @@ class SweepDynamicsPlotter:
         param_type="weights",
         offset=0.05,
         num_runs_to_plot: Optional[int] = None,
+        max_rows_per_page: int = 8,
     ):
-        nrows = (
+        npages = (
             min(len(self.run_ids), num_runs_to_plot)
             if num_runs_to_plot
             else len(self.run_ids)
         )
+        nrows = len(self.sweep_results)
         for param_name in self.sweep_results:
             ncols = len(self.sweep_results[param_name][param_type])
             param_name_parts = param_name.split("/")
@@ -458,7 +497,16 @@ class SweepDynamicsPlotter:
                 filtered_metrics = [
                     (w, m) for w, m in zip(widths, metrics) if m is not None
                 ]
-                row_title = f"Run {run_id} | Scene: {self.configs[run_idx].scene.capitalize()} | # Samples: {self.configs[run_idx].num_widths_to_sample} | Sampling Strategy: {self.configs[run_idx].sampling_strategy.capitalize()}"
+                elastic_model_name = ""
+                if self.configs[run_idx].radiance_field.use_elastic:
+                    elastic_model_name += "Radiance Field Base"
+                if self.configs[run_idx].radiance_field.use_elastic_head:
+                    elastic_model_name += "+Head"
+                if isinstance(self.configs[run_idx], NGPPropTrainerConfig):
+                    if self.configs[run_idx].density_field.use_elastic:
+                        elastic_model_name += ", Density Field Base"
+
+                row_title = f"Run {run_id} | Scene: {self.configs[run_idx].scene.capitalize()} | Elastic Blocks: {elastic_model_name} | # Samples: {self.configs[run_idx].num_widths_to_sample} | Sampling Strategy: {self.configs[run_idx].sampling_strategy.capitalize()} | Loss Weight Strategy: {self.configs[run_idx].loss_weight_strategy.capitalize()}"
                 row_title += (
                     " | Results: ("
                     + ", ".join([f"$\\mathbf{{{m:.3f}}}$" for _, m in filtered_metrics])
@@ -507,6 +555,7 @@ def main(
     sweep_id: str,
     model_type: Literal["ngp_occ", "ngp_prop"],
     max_runs: Optional[int] = None,
+    refresh_cache: bool = False,
 ):
     log_dir = Path("/home/user/shared/results/elastic-nerf")
     wandb_dir = Path("/home/user/shared/wandb_cache/elastic-nerf")
@@ -518,17 +567,25 @@ def main(
         results_cache_dir,
         model_type,
         max_runs_to_process=max_runs,
+        refresh_cache=refresh_cache,
     )
-    sdp.plot_sweep_dynamics(figsize_scales=(8, 5), param_type="weights")
-    sdp.plot_sweep_dynamics(figsize_scales=(8, 5), param_type="grads")
+    # sdp.plot_sweep_dynamics(figsize_scales=(8, 5), param_type="weights")
+    # sdp.plot_sweep_dynamics(figsize_scales=(8, 5), param_type="grads")
+    cache_dir = results_cache_dir / "sweeps" / sweep_id / "training_dynamics"
+    if not cache_dir.exists():
+        cache_dir.mkdir(parents=True, exist_ok=True)
+    torch.save(sdp.sweep_results, cache_dir / "sdp_sweep_results.pt")
+    return sdp
 
 
 # %%
-main("qfkjdvv2", "ngp_occ", 2)
+# model_type = "ngp_occ"
+# sweep = "qfkjdvv2"
+# sdp = main(sweep, "ngp_occ", None)
 
 # %%
-# if __name__ == "__main__":
-#     tyro.extras.set_accent_color("bright_yellow")
-#     tyro.cli(main)
+if __name__ == "__main__":
+    tyro.extras.set_accent_color("bright_yellow")
+    tyro.cli(main)
 
 # %%

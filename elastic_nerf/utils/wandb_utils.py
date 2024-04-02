@@ -11,12 +11,12 @@ from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Callable, DefaultDict, Dict, List, Optional, Tuple, Union
-import datetime
+
+from torchinfo import summary
 
 import gonas.utils.logging_utils as lu
 import pandas as pd
 import torch
-from tomlkit import table
 from tqdm import tqdm
 from wandb.apis.public import Api, File
 from wandb.apis.public import Run as WandbPublicRun
@@ -77,7 +77,6 @@ class RunResult:
     def __init__(
         self,
         run: WandbPublicRun,
-        results_cache_dir: Path,
         wandb_cache_dir: Path,
         download_history: bool = False,
         tables: Optional[List[str]] = None,
@@ -89,23 +88,27 @@ class RunResult:
             wandb_cache_dir.mkdir(parents=True, exist_ok=True)
 
         self.wandb_cache_dir = wandb_cache_dir
-        self.results_cache_dir: Path = results_cache_dir / f"{run.id}"
 
         try:
             self.config = run.config
             self.state = run.state
             if download_history:
                 self.history = self.download_history(run)
-            self.summary = self.download_summary(run)
+            # They seemed to have changed something in the summary which makes it impossible to pickle now.
+            # self.summary = self.download_summary(run)
             if tables is not None:
                 if self.wandb_cache_dir is None:
                     raise ValueError(
                         "Cache dir must be provided to download tables for a run."
                     )
                 self.tables = self.download_tables(run, tables, self.wandb_cache_dir)
+                lu.info(f"Downloaded tables {self.tables.keys()} for run {run.id}.")
         except Exception as e:
             lu.error(f"An error occurred while fetching run {run.id}: {e}")
             raise e
+
+    def __repr__(self):
+        return f"RunResult(run_id={self.run_id}, run_name={self.run_name}), run_date={self.run_date}), state={self.state}), config={self.config}))"
 
     # def add_weights_grad(self, result_dir, run_id):
     #     directory = os.path.join(result_dir, run_id, "weights_grads")
@@ -148,7 +151,7 @@ class RunResult:
         attributes_updated = False
         # Update history if needed
         if download_history and not hasattr(self, "history"):
-            print(f"Missing attribute history for run {run.id}.")
+            lu.warning(f"Missing attribute history for run {run.id}.")
             self.history = self.download_history(run)
             attributes_updated = True
 
@@ -160,13 +163,36 @@ class RunResult:
                 )
 
             if not hasattr(self, "tables"):
+                lu.warning(f"Missing attribute tables for run {run.id}.")
                 self.tables = self.download_tables(run, tables, cache_dir)
                 attributes_updated = True
             else:
                 for table_name in tables:
-                    if table_name not in self.tables or self.tables[table_name] is None:
+                    table_found = False
+                    for versioned_table_name in self.tables.keys():
+                        if table_name in versioned_table_name:
+                            table_found = (
+                                True
+                                if self.tables[versioned_table_name] is not None
+                                else False
+                            )
+                            break
+
+                    if table_found:
+                        continue
+                    elif (
+                        not table_found
+                        or table_name not in self.tables
+                        or self.tables[table_name] is None
+                    ):
+                        lu.warning(
+                            f"Missing table {table_name} for run {run.id} from {self.tables.keys()}."
+                        )
                         df_tables = self.download_table(run, table_name, cache_dir)
                         if df_tables is None:
+                            lu.warning(
+                                f"Failed to download table {table_name} for run {run.id}. Setting to None."
+                            )
                             self.tables[table_name] = None
                             attributes_updated = True
                         else:
@@ -179,16 +205,23 @@ class RunResult:
     @retry(num_retries=3)
     def download_summary(run: WandbPublicRun) -> Dict:
         """Downloads the wandb-summary.json file for a run and returns the summary dict."""
-        file: File = run.file("wandb-summary.json")  # type: ignore
-        # Create a temporary directory with summary file
-        with tempfile.TemporaryDirectory() as temp_dir:
-            file_path = os.path.join(temp_dir, "wandb-summary.json")
-            # Download the wandb-summary.json to the temporary directory
-            file.download(replace=True, root=temp_dir)
+        try:
+            summary_dict = {k: v for k, v in run.summary.items() if "table" not in k}
+            return summary_dict
+        except Exception as e:
+            lu.warning(
+                f"Parsing summary directly from attribute, could not find wandb-summary.json file for Run {run.id}. Error: {e}"
+            )
+            file: File = run.file("wandb-summary.json")  # type: ignore
+            # Create a temporary directory with summary file
+            with tempfile.TemporaryDirectory() as temp_dir:
+                file_path = os.path.join(temp_dir, "wandb-summary.json")
+                # Download the wandb-summary.json to the temporary directory
+                file.download(replace=True, root=temp_dir)
 
-            # Open and read the temporary file
-            with open(file_path, "r") as f:
-                summary_dict = json.load(f)
+                # Open and read the temporary file
+                with open(file_path, "r") as f:
+                    summary_dict = json.load(f)
 
             return summary_dict
 
@@ -219,7 +252,6 @@ class RunResult:
             version = f"v{version_idx}"
             table_name_versioned = f"{table_name}_{version}"
             table_dir = cache_dir / table_name_versioned
-            print(f"Downloading table {artifact_name} for run {run.id} to {table_dir}")
             table_path = table.download(root=table_dir.as_posix())
             table_json_path = f"{table_path}/**/**.table.json"
             table_json = glob.glob(table_json_path, recursive=True)
@@ -230,6 +262,7 @@ class RunResult:
             tables[table_name_versioned] = parse_wandb_table_json_to_dataframe(
                 table_json[0]
             )
+            lu.info(f"Downloaded table {artifact_name} for run {run.id} to {table_dir}")
 
         return tables
 
@@ -259,14 +292,13 @@ class RunResult:
         history_data = []
 
         # Iterate through the run history
-        print(f"Downloading history for run {run.id}")
         for entry in run.scan_history(page_size=100000):
             # Append the current entry (row) to the history_data
             history_data.append(entry)
 
         # Convert the list of dictionaries into a DataFrame
         history_df = pd.DataFrame(history_data)
-        print(f"Downloaded history for run {run.id}")
+        lu.info(f"Downloaded history for run {run.id}")
 
         return history_df
 
@@ -326,18 +358,24 @@ def fetch_run_result(
     # If a cached result exists, load and return it
     if cache and not refresh_cache and os.path.exists(cache_file):
         lu.warning(f"Found cached results for run {run_id}")
-        with open(cache_file, "rb") as f:
-            cached_result: RunResult = pickle.load(f)
+        try:
+            with open(cache_file, "rb") as f:
+                cached_result: RunResult = pickle.load(f)
 
-        attributes_updated = cached_result.update_missing_attributes(
-            run, cache_dir=run_assets_dir, **kwargs
-        )
-        if attributes_updated:
-            lu.warning(f"Updated missing attributes for run {run_id}.")
-            with open(cache_file, "wb") as fw:
-                pickle.dump(cached_result, fw)
+            attributes_updated = cached_result.update_missing_attributes(
+                run, cache_dir=run_assets_dir, **kwargs
+            )
+            if attributes_updated:
+                with open(cache_file, "wb") as fw:
+                    pickle.dump(cached_result, fw)
+                lu.warning(f"Updated missing attributes for run {run_id}.")
 
-        return cached_result
+            return cached_result
+        except Exception as e:
+            lu.error(
+                f"Failed to load cached results for run {run_id}: {e}. Attempting to refresh cache."
+            )
+            pass
 
     run_result = RunResult(
         run,
@@ -372,7 +410,8 @@ def remove_sweep_results_cache(sweep: Union[str, Sweep]):
 def fetch_sweep_results(
     sweep: Union[str, Sweep],
     cache: bool = True,
-    refresh_cache: bool = False,
+    refresh_sweep_cache: bool = True,
+    refresh_run_cache: bool = False,
     **kwargs,
 ) -> List[RunResult]:
     """Fetch summary data for all runs in a sweep, with optional caching."""
@@ -388,19 +427,19 @@ def fetch_sweep_results(
     cache_file = os.path.join(cache_dir, f"{sweep_id}_results.pkl")
 
     # Load from cache if available and not refreshing
-    if cache and not refresh_cache and os.path.exists(cache_file):
-        lu.warning(f"Using cached results for sweep {sweep_id}")
+    if cache and not refresh_sweep_cache and os.path.exists(cache_file):
+        lu.warning(f"Loading cached results for sweep {sweep_id}")
         with open(cache_file, "rb") as f:
             return pickle.load(f)
 
     # Fetch the results
-    with concurrent.futures.ThreadPoolExecutor() as executor:
+    with concurrent.futures.ThreadPoolExecutor(max_workers=10) as executor:
         futures = [
             executor.submit(
                 fetch_run_result,
                 run.id,
                 cache=cache,
-                refresh_cache=refresh_cache,
+                refresh_cache=refresh_run_cache,
                 **kwargs,
             )
             for run in sweep.runs

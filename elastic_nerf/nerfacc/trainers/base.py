@@ -112,7 +112,7 @@ class NGPBaseTrainerConfig(PrintableConfig):
     """Whether to use elastic loss."""
     use_elastic_lr: bool = False
     """Whether to use elastic learning rate."""
-    use_mup: bool = False
+    use_mup: bool = True
     """Whether to use Maximal Update Parameterization."""
     num_widths_to_sample: int = 1
     """Number of widths to sample for each training step."""
@@ -996,7 +996,14 @@ class NGPTrainer:
 
         for name, param in module.named_parameters():
             if name in ckpt["gradients"]:
-                param.grad = ckpt["gradients"][name]
+                grad = ckpt["gradients"][name]
+                try:
+                    grad = grad.to(param.device)
+                    grad = grad.to(param.dtype)
+                    param.grad = grad
+                except Exception as e:
+                    print(f"param.dtype = {param.dtype}, grad = {grad}, param.grad = {param.grad}")
+                    raise e
 
     def freeze(self):
         """Saves a deepcopy of models to be used for evaluation."""
