@@ -1,0 +1,57 @@
+name: ngp_prop-mipnerf360-sampling-mup-norm
+project: elastic-nerf
+entity: saeejithn
+method: grid
+description: This performs a sweep over mipnerf360 dataset with nerfacc accelerated ngp prop model.
+parameters:
+  dataset-name:
+    value: mipnerf360
+  scene:
+    values:
+      - garden
+      - counter
+      - kitchen
+      - stump
+  sampling-strategy:
+    values:
+      - uniform
+  loss-weight-strategy:
+    values:
+      - uniform
+  radiance-field.use-elastic:
+    values:
+      - True
+  normalize-loss-weights:
+    values:
+      - True
+  radiance-field.use-elastic-head:
+    values:
+      - True
+  num-train-widths:
+    value: 4
+  num-widths-to-sample:
+    values:
+      - 4
+      - 1
+  density-field.use-elastic:
+    values:
+      - True
+  radiance-field.head-depth:
+    values:
+      - 1
+      - 2
+  fused-eval:
+    values:
+      - False
+  use-mup:
+    values:
+      - True
+  seed:
+    values:
+      - 42
+      - 30
+      - 1234
+command:
+  - python
+  - scripts/train/train_elastic_ngp_prop.py
+  - ${args}
