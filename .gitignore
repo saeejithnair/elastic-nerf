@@ -205,3 +205,7 @@ tools/fastai
 checklink/cookies.txt
 
 /.quarto/
+
+*.csv
+*.pt
+**/results/*.html
