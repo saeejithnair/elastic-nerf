@@ -297,6 +297,16 @@ class NGPTrainer:
         with open(self.log_dir / "config.yaml", "w") as f:
             f.write(config_serialized)
 
+        # Save sampling schedule and training schedule to log directory.
+        with open(self.log_dir / "schedules.pt", "wb") as f:
+            torch.save(
+                {
+                    "sampling_schedule": self.sampling_schedule,
+                    "train_indices_to_sample": self.train_indices_to_sample,
+                },
+                f,
+            )
+
         config = asdict(self.config)
         mode = "disabled" if not self.config.enable_logging else None
         wandb.init(
