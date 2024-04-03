@@ -196,6 +196,10 @@ class ElasticMLPConfig(FlexibleInstantiateConfig):
     """Whether to include bias in linear layers."""
     bias_init: Callable = nn.init.zeros_
     """Initialization function to apply to bias."""
+    granular_norm: Optional[GranularNormConfig] = field(
+        default_factory=lambda: GranularNormConfig()
+    )
+    """Configuration for granular normalization."""
     # widths: NerfMLPHiddenLayers = field(default_factory=lambda: NerfMLPHiddenLayers())
     # """The number of active neurons per layer. If empty, defaults to creating an
     # MLP with `net_depth` layers` and `net_width` neurons per layer.
@@ -262,6 +266,7 @@ class ElasticMLP(nn.Module):
         self.bias_init = bias_init
         self.use_granular_norm = True if granular_norm else False
         self.granular_norm = granular_norm
+        print(f"Using granular norms")
         self.elastic_widths = elastic_widths if elastic_widths is not None else {}
 
         self.hidden_layers = nn.ModuleList()

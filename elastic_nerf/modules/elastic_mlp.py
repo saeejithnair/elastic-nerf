@@ -119,7 +119,7 @@ class GranularNormConfig(FlexibleInstantiateConfig):
 
     eps: float = 1e-5
     """A small value added for numerical stability in normalization calculations."""
-    normalization_method: Literal["var", "std"] = "std"
+    normalization_method: Literal["var", "std"] = "var"
     """Normalization method to use."""
 
 
