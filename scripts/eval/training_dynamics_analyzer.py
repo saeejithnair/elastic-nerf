@@ -61,7 +61,11 @@ class TrainingDynamicsAnalyzer:
             }
             for model_name, model in models.items()
             for param_name, p in model.named_parameters()
-            if ("hidden_layers" in param_name or "output_layer" in param_name)
+            if (
+                "hidden_layers" in param_name
+                or "output_layer" in param_name
+                or "norm_layers" in param_name
+            )
         }
         self.grad_norms = {
             f"{model_name}/{param_name}": {
@@ -69,7 +73,11 @@ class TrainingDynamicsAnalyzer:
             }
             for model_name, model in models.items()
             for param_name, p in model.named_parameters()
-            if ("hidden_layers" in param_name or "output_layer" in param_name)
+            if (
+                "hidden_layers" in param_name
+                or "output_layer" in param_name
+                or "norm_layers" in param_name
+            )
         }
         self.width_step = width_step
         self.widths = list(range(1, self.max_width + 1, self.width_step))
