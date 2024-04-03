@@ -116,34 +116,38 @@ class NGPPropTrainer(NGPTrainer):
 
     def init_mup_proposal_nets(self, proposal_networks, aabb):
         base_width = 8
-        base_models = [
-            self.config.density_field.setup(
-                aabb=aabb,
-                unbounded=self.dataset.unbounded,
-                n_levels=5,
-                max_resolution=resolution,
-                base_mlp_width=base_width,
-            ).to(self.device)
-            for resolution in self.dataset.prop_network_resolutions
-        ]
-        delta_models = [
-            self.config.density_field.setup(
-                aabb=aabb,
-                unbounded=self.dataset.unbounded,
-                n_levels=5,
-                max_resolution=resolution,
-                base_mlp_width=base_width + 1,
-            ).to(self.device)
-            for resolution in self.dataset.prop_network_resolutions
-        ]
-        for base, delta, model in zip(base_models, delta_models, proposal_networks):
-            set_base_shapes(model, base, delta=delta)
-            for name, param in model.named_parameters():
-                if "weight" in name:
+        initialized_proposal_networks = []
+        for i, proposal_network in enumerate(proposal_networks):
+            if self.config.use_mup:
+                resolution = self.dataset.prop_network_resolutions[i]
+                base_model = self.config.density_field.setup(
+                    aabb=aabb,
+                    unbounded=self.dataset.unbounded,
+                    n_levels=5,
+                    max_resolution=resolution,
+                    base_mlp_width=base_width,
+                ).to(self.device)
+                delta_model = self.config.density_field.setup(
+                    aabb=aabb,
+                    unbounded=self.dataset.unbounded,
+                    n_levels=5,
+                    max_resolution=resolution,
+                    base_mlp_width=base_width + 1,
+                ).to(self.device)
+                set_base_shapes(proposal_network, base_model, delta=delta_model)
+
+            for name, param in proposal_network.named_parameters():
+                if self.config.use_mup and "weight" in name:
                     mup.init.xavier_normal_(param)
+                elif "weight" in name:
+                    torch.nn.init.xavier_normal_(param)
                 else:
                     print(f"Skipping initialization for {name}")
                     continue
+
+            initialized_proposal_networks.append(proposal_network)
+
+        return initialized_proposal_networks
 
     def init_mup_radiance_field(self, radiance_field, aabb):
         if self.config.use_mup:
@@ -171,12 +175,14 @@ class NGPPropTrainer(NGPTrainer):
                 print(f"Skipping initialization for {name}")
                 continue
 
+        return radiance_field
+
     def initialize_model(self):
         """Initialize the radiance field and optimizer."""
         aabb = torch.tensor([*self.dataset.aabb_coeffs], device=self.device)
         proposal_networks = [
             self.config.density_field.setup(
-                aabb=aabb,
+                aabb=aabb.clone(),
                 unbounded=self.dataset.unbounded,
                 n_levels=5,
                 max_resolution=resolution,
@@ -184,8 +190,10 @@ class NGPPropTrainer(NGPTrainer):
             ).to(self.device)
             for resolution in self.dataset.prop_network_resolutions
         ]
-        self.init_mup_proposal_nets(proposal_networks, aabb)
-        prop_optimizer = MuAdam(
+        proposal_networks = self.init_mup_proposal_nets(proposal_networks, aabb.clone())
+        optimizer_type = MuAdam if self.config.use_mup else torch.optim.Adam
+        print(f"Using optimizer: {optimizer_type}")
+        prop_optimizer = optimizer_type(
             itertools.chain(
                 *[p.parameters() for p in proposal_networks],
             ),
@@ -211,19 +219,21 @@ class NGPPropTrainer(NGPTrainer):
                 ),
             ]
         )
+        if self.config.use_elastic_lr:
+            raise NotImplementedError("Elastic LR not supported for proposal networks.")
+
         estimator = PropNetEstimator(prop_optimizer, prop_scheduler).to(self.device)
 
         grad_scaler = torch.cuda.amp.GradScaler(2**10)
         radiance_field: NGPRadianceField = self.config.radiance_field.setup(
-            aabb=aabb,
+            aabb=aabb.clone(),
             unbounded=self.dataset.unbounded,
             base_mlp_width=self.config.hidden_dim,
             head_mlp_width=self.config.hidden_dim,
         ).to(self.device)
-        self.init_mup_radiance_field(radiance_field, aabb)
+        radiance_field = self.init_mup_radiance_field(radiance_field, aabb)
         # radiance_field_param_groups = radiance_field.get_param_groups()
         radiance_field_param_groups = radiance_field.parameters()
-        optimizer_type = MuAdam if self.config.use_mup else torch.optim.Adam
         optimizer = optimizer_type(
             radiance_field_param_groups,
             lr=self.compute_lr(self.dataset.optimizer_lr),
@@ -275,7 +285,7 @@ class NGPPropTrainer(NGPTrainer):
             "radiance_field": self.radiance_field,
         }
         for i, prop_net in enumerate(self.proposal_networks):
-            self.models_to_watch[f"proposal_net_{i}"] = prop_net
+            self.models_to_watch[f"proposal_net_{i}"] = self.proposal_networks[i]
 
     def get_elastic_forward_kwargs(self, elastic_width, eval=False):
         if eval and self.config.fused_eval:
@@ -412,7 +422,6 @@ class NGPPropTrainer(NGPTrainer):
         ]
 
         proposal_requires_grad = self.proposal_requires_grad_fn(self.step)
-
         loss_dict = {}
         metrics_dict = {}
         estimator_loss_dict = {}

@@ -11,7 +11,6 @@ from nerfacc.estimators.occ_grid import OccGridEstimator
 from nerfacc.estimators.prop_net import PropNetEstimator
 from nerfacc.volrend import rendering
 from torch.utils.data._utils.collate import collate, default_collate_fn_map
-
 from elastic_nerf.nerfacc.datasets.utils import Rays, namedtuple_map
 
 try:
@@ -216,11 +215,12 @@ def render_image_with_propnet(
 
     results = []
     chunk = torch.iinfo(torch.int32).max if radiance_field.training else test_chunk_size
+
     for i in range(0, num_rays, chunk):
         chunk_rays = namedtuple_map(lambda r: r[i : i + chunk], rays)
         t_starts, t_ends = estimator.sampling(
             prop_sigma_fns=[
-                lambda *args: prop_sigma_fn(*args, p) for p in proposal_networks
+                lambda *args, p=p: prop_sigma_fn(*args, p) for p in proposal_networks
             ],
             prop_samples=num_samples_per_prop,
             num_samples=num_samples,

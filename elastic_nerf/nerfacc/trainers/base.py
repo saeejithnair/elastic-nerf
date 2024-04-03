@@ -308,8 +308,6 @@ class NGPTrainer:
             mode=mode,
         )
 
-        # wandb.watch(self.radiance_field, log="gradients", log_graph=True, log_freq=500)
-
         self.exp_config_columns = {
             "Scene": self.config.scene,
             "Dataset": self.config.dataset_name,

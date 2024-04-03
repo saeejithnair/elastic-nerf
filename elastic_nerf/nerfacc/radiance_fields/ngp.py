@@ -619,6 +619,7 @@ class NGPDensityField(NGPField):
         else:
             aabb_min, aabb_max = torch.split(self.aabb, self.num_dim, dim=-1)
             positions = (positions - aabb_min) / (aabb_max - aabb_min)
+
         selector = ((positions > 0.0) & (positions < 1.0)).all(dim=-1)
         density_before_activation = (
             self.mlp_base(positions.view(-1, self.num_dim), **kwargs)
