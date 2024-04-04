@@ -121,6 +121,8 @@ class GranularNormConfig(FlexibleInstantiateConfig):
     """A small value added for numerical stability in normalization calculations."""
     normalization_method: Literal["var", "std"] = "var"
     """Normalization method to use."""
+    enabled: bool = False
+    """Whether to use GranularNorm for normalization."""
 
 
 class GranularNorm(nn.Module):

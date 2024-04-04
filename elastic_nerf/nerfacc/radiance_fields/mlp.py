@@ -196,7 +196,7 @@ class ElasticMLPConfig(FlexibleInstantiateConfig):
     """Whether to include bias in linear layers."""
     bias_init: Callable = nn.init.zeros_
     """Initialization function to apply to bias."""
-    granular_norm: Optional[GranularNormConfig] = field(
+    granular_norm: GranularNormConfig = field(
         default_factory=lambda: GranularNormConfig()
     )
     """Configuration for granular normalization."""
@@ -264,10 +264,12 @@ class ElasticMLP(nn.Module):
         self.output_activation = output_activation
         self.bias_enabled = bias_enabled
         self.bias_init = bias_init
-        self.use_granular_norm = True if granular_norm else False
-        self.granular_norm = granular_norm
-        if self.use_granular_norm:
+        if granular_norm is not None and granular_norm.enabled:
+            self.use_granular_norm = True
             print(f"Using granular norms")
+        else:
+            self.use_granular_norm = False
+        self.granular_norm = granular_norm
         self.elastic_widths = elastic_widths if elastic_widths is not None else {}
 
         self.hidden_layers = nn.ModuleList()

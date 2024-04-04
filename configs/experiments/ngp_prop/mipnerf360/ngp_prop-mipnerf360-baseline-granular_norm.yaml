@@ -37,6 +37,12 @@ parameters:
   fused-eval:
     values:
       - False
+  radiance-field.base.granular-norm.enabled:
+    values:
+      - True
+  density-field.base.granular-norm.enabled:
+    values:
+      - True
   seed:
     values:
       - 42
