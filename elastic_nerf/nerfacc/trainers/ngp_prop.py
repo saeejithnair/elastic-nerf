@@ -136,30 +136,41 @@ class NGPPropTrainer(NGPTrainer):
                 ).to(self.device)
                 set_base_shapes(proposal_network, base_model, delta=delta_model)
 
-            for name, param in proposal_network.named_parameters():
-                if self.config.use_mup and "weight" in name:
-                    if "output_layer" in name:
-                        nonlinearity = "linear"
-                    else:
-                        nonlinearity = "relu"
-                    torch.nn.init.kaiming_normal_(param, nonlinearity=nonlinearity)
-                    # Apply spectral normalization to the param.
-                    fanin, fanout = mup.init._calculate_fan_in_and_fan_out(param)
-                    with torch.no_grad():
-                        param.data = (
-                            min(1, np.sqrt(fanout / fanin))
-                            * param.data
-                            / torch.linalg.matrix_norm(param, ord=2)
-                        )
-                elif "weight" in name:
-                    torch.nn.init.kaiming_normal_(param, nonlinearity="relu")
-                else:
-                    print(f"Skipping initialization for {name}")
-                    continue
+            proposal_network = self.initialize_params(proposal_network)
 
             initialized_proposal_networks.append(proposal_network)
 
         return initialized_proposal_networks
+
+    def initialize_params(self, model):
+        for name, param in model.named_parameters():
+            if self.config.use_mup and "weight" in name:
+                if "output_layer" in name:
+                    nonlinearity = "linear"
+                    prefactor = 1.0
+                else:
+                    nonlinearity = "relu"
+                    prefactor = np.sqrt(2.0)
+                torch.nn.init.normal_(param, mean=0, std=1)
+                # Apply spectral normalization to the param.
+                fanin, fanout = mup.init._calculate_fan_in_and_fan_out(param)
+                with torch.no_grad():
+                    param.data = (
+                        prefactor
+                        * np.sqrt(fanout / fanin)
+                        * param.data
+                        / torch.linalg.matrix_norm(param, ord=2)
+                    )
+            elif "weight" in name:
+                if "output_layer" in name:
+                    nonlinearity = "linear"
+                else:
+                    nonlinearity = "relu"
+                torch.nn.init.kaiming_normal_(param, nonlinearity=nonlinearity)
+            else:
+                print(f"Skipping initialization for {name}")
+                continue
+        return model
 
     def init_mup_radiance_field(self, radiance_field, aabb):
         if self.config.use_mup:
@@ -178,26 +189,7 @@ class NGPPropTrainer(NGPTrainer):
             ).to(self.device)
             set_base_shapes(radiance_field, base_model, delta=delta_model)
 
-        for name, param in radiance_field.named_parameters():
-            if self.config.use_mup and "weight" in name:
-                if "output_layer" in name:
-                    nonlinearity = "linear"
-                else:
-                    nonlinearity = "relu"
-                torch.nn.init.kaiming_normal_(param, nonlinearity=nonlinearity)
-                # Apply spectral normalization to the param.
-                fanin, fanout = mup.init._calculate_fan_in_and_fan_out(param)
-                with torch.no_grad():
-                    param.data = (
-                        min(1, np.sqrt(fanout / fanin))
-                        * param.data
-                        / torch.linalg.matrix_norm(param, ord=2)
-                    )
-            elif "weight" in name:
-                torch.nn.init.kaiming_normal_(param, nonlinearity="relu")
-            else:
-                print(f"Skipping initialization for {name}")
-                continue
+        radiance_field = self.initialize_params(radiance_field)
 
         return radiance_field
 
