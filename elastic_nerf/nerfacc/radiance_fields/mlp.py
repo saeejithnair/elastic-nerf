@@ -266,7 +266,8 @@ class ElasticMLP(nn.Module):
         self.bias_init = bias_init
         self.use_granular_norm = True if granular_norm else False
         self.granular_norm = granular_norm
-        print(f"Using granular norms")
+        if self.use_granular_norm:
+            print(f"Using granular norms")
         self.elastic_widths = elastic_widths if elastic_widths is not None else {}
 
         self.hidden_layers = nn.ModuleList()
