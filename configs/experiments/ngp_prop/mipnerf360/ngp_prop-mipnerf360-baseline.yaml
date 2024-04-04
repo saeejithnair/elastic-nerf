@@ -1,4 +1,4 @@
-name: ngp_prop-mipnerf360-baseline
+name: ngp_prop-mipnerf360-baseline-mup
 project: elastic-nerf
 entity: saeejithn
 method: grid
@@ -8,13 +8,7 @@ parameters:
     value: mipnerf360
   scene:
     values:
-      - garden
-      - bicycle
-      - bonsai
       - counter
-      - kitchen
-      - room
-      - stump
   num-train-widths:
     value: 1
   num-eval-elastic-widths:
@@ -40,8 +34,19 @@ parameters:
   radiance-field.head-depth:
     values:
       - 1
-      - 2
   fused-eval:
+    values:
+      - False
+  use-mup:
+    values:
+      - True
+  radiance-field.base.granular-norm.enabled:
+    values:
+      - False
+  radiance-field.head.granular-norm.enabled:
+    values:
+      - False
+  density-field.base.granular-norm.enabled:
     values:
       - False
   seed:

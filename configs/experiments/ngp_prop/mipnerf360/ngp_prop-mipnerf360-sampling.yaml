@@ -1,4 +1,4 @@
-name: ngp_prop-mipnerf360-sampling
+name: ngp_prop-mipnerf360-sampling-mup
 project: elastic-nerf
 entity: saeejithn
 method: grid
@@ -12,13 +12,9 @@ parameters:
   sampling-strategy:
     values:
       - uniform
-      - exp-reverse
   loss-weight-strategy:
     values:
       - uniform
-      - matroyshka
-      - exp
-      - exp-inv
   radiance-field.use-elastic:
     values:
       - True
@@ -28,18 +24,38 @@ parameters:
   radiance-field.use-elastic-head:
     values:
       - True
-      - False
   num-train-widths:
     value: 4
   num-widths-to-sample:
     values:
       - 4
-      - 3
-      - 2
+      - 1
   density-field.use-elastic:
     values:
       - True
+  radiance-field.head-depth:
+    values:
+      - 1
+  fused-eval:
+    values:
       - False
+  use-mup:
+    values:
+      - True
+  radiance-field.base.granular-norm.enabled:
+    values:
+      - False
+  radiance-field.head.granular-norm.enabled:
+    values:
+      - False
+  density-field.base.granular-norm.enabled:
+    values:
+      - False
+  seed:
+    values:
+      - 42
+      - 27
+      - 1234
 command:
   - python
   - scripts/train/train_elastic_ngp_prop.py
