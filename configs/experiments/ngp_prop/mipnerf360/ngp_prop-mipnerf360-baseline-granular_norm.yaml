@@ -40,6 +40,9 @@ parameters:
   radiance-field.base.granular-norm.enabled:
     values:
       - True
+  radiance-field.head.granular-norm.enabled:
+    values:
+      - True
   density-field.base.granular-norm.enabled:
     values:
       - True

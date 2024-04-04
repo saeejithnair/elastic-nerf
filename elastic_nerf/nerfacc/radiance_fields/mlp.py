@@ -266,14 +266,15 @@ class ElasticMLP(nn.Module):
         self.bias_init = bias_init
         if granular_norm is not None and granular_norm.enabled:
             self.use_granular_norm = True
+            self.granular_norm = granular_norm
             print(f"Using granular norms")
         else:
             self.use_granular_norm = False
-        self.granular_norm = granular_norm
+            self.granular_norm = None
         self.elastic_widths = elastic_widths if elastic_widths is not None else {}
 
         self.hidden_layers = nn.ModuleList()
-        self.norm_layers = nn.ModuleList() if self.granular_norm else None
+        self.norm_layers = nn.ModuleList() if self.use_granular_norm else None
 
         in_features = self.input_dim
 
@@ -291,7 +292,7 @@ class ElasticMLP(nn.Module):
                 nn.Linear(in_features, layer_width, bias=bias_enabled)
             )
 
-            if self.granular_norm:
+            if self.use_granular_norm:
                 self.norm_layers.append(
                     self.granular_norm.setup(num_features=layer_width)
                 )
