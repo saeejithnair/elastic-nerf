@@ -170,9 +170,11 @@ class NGPPropTrainer(NGPTrainer):
 
         for name, param in radiance_field.named_parameters():
             if self.config.use_mup and "weight" in name:
-                mup.init.xavier_normal_(param)
+                mup.init.kaiming_normal_(param, nonlinearity="relu")
+                # Apply spectral normalization to the param.
+                param = param / torch.linalg.norm(param, ord=2)
             elif "weight" in name:
-                torch.nn.init.xavier_normal_(param)
+                torch.nn.init.kaiming_normal_(param, nonlinearity="relu")
             else:
                 print(f"Skipping initialization for {name}")
                 continue
