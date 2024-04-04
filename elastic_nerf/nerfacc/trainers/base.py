@@ -654,6 +654,18 @@ class NGPTrainer:
 
         return module_copy.to(self.device)
 
+    def probe_models(self):
+        print(f"Probing models...")
+        for name, module in self.models_to_watch.items():
+            for n, p in module.named_parameters():
+                if "layer" not in n or "norm" in n:
+                    continue
+                if p.ndim == 1:
+                    p = p.unsqueeze(-1)
+                norm = torch.linalg.matrix_norm(p, ord=2).item()
+                var = p.var().item()
+                print(name, n, p.shape, f"Norm: {norm:.3f}", f"Var: {var:.3f}")
+
     def get_modules_for_eval(self, elastic_width):
         modules_for_eval = {}
         for name, module in self.frozen.items():

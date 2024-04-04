@@ -131,10 +131,10 @@ ngp_occ_config.radiance_field.use_elastic = True
 ngp_occ_trainer = ngp_occ_config.setup()
 
 # %%
-ngp_prop_config.seed = 42
+ngp_prop_config.seed = 27
 ngp_prop_config.num_train_widths = 1
 ngp_prop_config.num_eval_elastic_widths = 1
-ngp_prop_config.hidden_dim = 8
+ngp_prop_config.hidden_dim = 64
 ngp_prop_trainer = ngp_prop_config.setup()
 modules = ngp_prop_trainer.get_modules_for_eval(ngp_prop_config.hidden_dim)
 unpacked_modules = {}

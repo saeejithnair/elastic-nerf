@@ -138,9 +138,15 @@ class NGPPropTrainer(NGPTrainer):
 
             for name, param in proposal_network.named_parameters():
                 if self.config.use_mup and "weight" in name:
-                    mup.init.kaiming_normal_(param, nonlinearity="relu")
+                    torch.nn.init.kaiming_normal_(param, nonlinearity="relu")
                     # Apply spectral normalization to the param.
-                    param = param / torch.linalg.norm(param, ord=2)
+                    fanin, fanout = mup.init._calculate_fan_in_and_fan_out(param)
+                    with torch.no_grad():
+                        param.data = (
+                            min(1, np.sqrt(fanout / fanin))
+                            * param.data
+                            / torch.linalg.matrix_norm(param, ord=2)
+                        )
                 elif "weight" in name:
                     torch.nn.init.kaiming_normal_(param, nonlinearity="relu")
                 else:
@@ -170,9 +176,15 @@ class NGPPropTrainer(NGPTrainer):
 
         for name, param in radiance_field.named_parameters():
             if self.config.use_mup and "weight" in name:
-                mup.init.kaiming_normal_(param, nonlinearity="relu")
+                torch.nn.init.kaiming_normal_(param, nonlinearity="relu")
                 # Apply spectral normalization to the param.
-                param = param / torch.linalg.norm(param, ord=2)
+                fanin, fanout = mup.init._calculate_fan_in_and_fan_out(param)
+                with torch.no_grad():
+                    param.data = (
+                        min(1, np.sqrt(fanout / fanin))
+                        * param.data
+                        / torch.linalg.matrix_norm(param, ord=2)
+                    )
             elif "weight" in name:
                 torch.nn.init.kaiming_normal_(param, nonlinearity="relu")
             else:
