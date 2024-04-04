@@ -5,6 +5,7 @@ from pathlib import Path
 from typing import Sequence, Dict
 from elastic_nerf.nerfacc.trainers.ngp_prop import NGPPropTrainer, NGPPropTrainerConfig
 from elastic_nerf.nerfacc.trainers.ngp_occ import NGPOccTrainer, NGPOccTrainerConfig
+import torch
 
 
 # %%
@@ -130,7 +131,28 @@ ngp_occ_config.radiance_field.use_elastic = True
 ngp_occ_trainer = ngp_occ_config.setup()
 
 # %%
-modules = ngp_prop_trainer.get_modules_for_eval(8)
+ngp_prop_config.seed = 42
+ngp_prop_config.num_train_widths = 1
+ngp_prop_config.num_eval_elastic_widths = 1
+ngp_prop_config.hidden_dim = 8
+ngp_prop_trainer = ngp_prop_config.setup()
+modules = ngp_prop_trainer.get_modules_for_eval(ngp_prop_config.hidden_dim)
+unpacked_modules = {}
+for k, v in modules.items():
+    if isinstance(v, Sequence):
+        for i, m in enumerate(v):
+            unpacked_modules[f"{k}_{i}"] = m
+    else:
+        unpacked_modules[k] = v
+for module_name, module in unpacked_modules.items():
+    for n, p in module.named_parameters():
+        if "layer" not in n or "norm" in n:
+            continue
+        if p.ndim == 1:
+            p = p.unsqueeze(-1)
+        norm = torch.linalg.matrix_norm(p, ord=2).item()
+        var = p.var().item()
+        print(n, p.shape, f"Norm: {norm:.3f}", f"Var: {var:.3f}")
 
 # %%
 # widths = range(8, 65, 8)
