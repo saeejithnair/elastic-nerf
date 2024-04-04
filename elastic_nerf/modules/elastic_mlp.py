@@ -157,7 +157,9 @@ class GranularNorm(nn.Module):
         num_features: int,
         eps: float = 1e-5,
         normalization_method: Literal["var", "std"] = "std",
+        enabled: bool = False,
     ):
+        assert enabled is True, "GranularNorm is not enabled."
         super().__init__()
         self.num_features = num_features
         self.eps = eps
