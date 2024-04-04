@@ -8,10 +8,7 @@ parameters:
     value: mipnerf360
   scene:
     values:
-      - garden
       - counter
-      - kitchen
-      - stump
   num-train-widths:
     value: 1
   num-eval-elastic-widths:
@@ -37,7 +34,6 @@ parameters:
   radiance-field.head-depth:
     values:
       - 1
-      - 2
   fused-eval:
     values:
       - False

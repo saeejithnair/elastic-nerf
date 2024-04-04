@@ -8,10 +8,7 @@ parameters:
     value: mipnerf360
   scene:
     values:
-      - garden
       - counter
-      - kitchen
-      - stump
   sampling-strategy:
     values:
       - uniform
@@ -39,7 +36,6 @@ parameters:
   radiance-field.head-depth:
     values:
       - 1
-      - 2
   fused-eval:
     values:
       - False
@@ -49,7 +45,7 @@ parameters:
   seed:
     values:
       - 42
-      - 30
+      - 27
       - 1234
 command:
   - python
