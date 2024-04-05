@@ -34,7 +34,11 @@ def ElasticMuAdam(params, impl=Adam, **kwargs):
                 fanin, fanout = _calculate_fan_in_and_fan_out(p.unsqueeze(-1))
             else:
                 fanin, fanout = _calculate_fan_in_and_fan_out(p)
-            scaling = fanout / fanin
+
+            if p.infshape.ninf() == 0:
+                scaling = 1
+            else:
+                scaling = fanout / fanin
             spectral_scaling_groups[scaling]["params"].append(p)
 
         for scaling, group in spectral_scaling_groups.items():

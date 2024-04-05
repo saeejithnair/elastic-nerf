@@ -79,6 +79,9 @@ class NGPPropTrainerConfig(NGPBaseTrainerConfig):
             self.dataset = MipNerf360DatasetPropConfig(scene=self.scene)
         else:
             raise ValueError(f"Unknown dataset {self.dataset_name}")
+        
+        if self.optimizer_lr is not None:
+            self.dataset.optimizer_lr = self.optimizer_lr
 
     def setup(self, **kwargs) -> "NGPPropTrainer":
         """Returns the instantiated object using the config."""

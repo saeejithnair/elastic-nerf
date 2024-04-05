@@ -123,6 +123,7 @@ class GranularNormConfig(FlexibleInstantiateConfig):
     """Normalization method to use."""
     enabled: bool = False
     """Whether to use GranularNorm for normalization."""
+    elementwise_affine: bool = False
 
 
 class GranularNorm(nn.Module):
@@ -158,12 +159,14 @@ class GranularNorm(nn.Module):
         eps: float = 1e-5,
         normalization_method: Literal["var", "std"] = "std",
         enabled: bool = False,
+        elementwise_affine: bool = False,
     ):
         assert enabled is True, "GranularNorm is not enabled."
         super().__init__()
         self.num_features = num_features
         self.eps = eps
         self.normalization_method = normalization_method
+        self.elementwise_affine = elementwise_affine
         if self.normalization_method == "std":
             self.normalization_fn = self.normalize_std
         elif self.normalization_method == "var":
@@ -173,8 +176,9 @@ class GranularNorm(nn.Module):
                 f"Normalization method {self.normalization_method} not supported."
             )
         # Learnable parameters for scale and shift, initialized for each feature
-        self.gamma = nn.Parameter(torch.ones(num_features))
-        self.beta = nn.Parameter(torch.zeros(num_features))
+        if self.elementwise_affine:
+            self.gamma = nn.Parameter(torch.ones(num_features))
+            self.beta = nn.Parameter(torch.zeros(num_features))
 
     def normalize_var(self, x):
         # Compute the mean and variance for each sample in the batch across its features
@@ -206,11 +210,13 @@ class GranularNorm(nn.Module):
         active_neurons = x.shape[-1]
         x_normalized = self.normalization_fn(x)
 
-        # Apply a subset of learnable parameters (gamma and beta) based on active_neurons
-        x_scaled = (
-            self.gamma[:active_neurons] * x_normalized + self.beta[:active_neurons]
-        )
-        return x_scaled
+        if self.elementwise_affine:
+            # Apply a subset of learnable parameters (gamma and beta) based on active_neurons
+            x_normalized = (
+                self.gamma[:active_neurons] * x_normalized + self.beta[:active_neurons]
+            )
+
+        return x_normalized
 
 
 class ElasticMLP(nn.Module):

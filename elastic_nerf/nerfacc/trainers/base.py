@@ -112,6 +112,8 @@ class NGPBaseTrainerConfig(PrintableConfig):
     """Whether to use elastic loss."""
     use_elastic_lr: bool = False
     """Whether to use elastic learning rate."""
+    optimizer_lr: Optional[float] = None
+    """The optimizer learning rate."""
     use_mup: bool = True
     """Whether to use Maximal Update Parameterization."""
     num_widths_to_sample: int = 1

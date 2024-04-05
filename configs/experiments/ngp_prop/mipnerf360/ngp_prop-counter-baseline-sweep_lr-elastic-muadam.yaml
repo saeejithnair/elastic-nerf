@@ -1,0 +1,61 @@
+name: ngp_prop-counter-baseline-sweep_lr-elastic-muadam
+project: elastic-nerf
+entity: saeejithn
+method: bayes
+metric:
+  goal: maximize
+  name: "Eval Results Summary/psnr_avg/elastic_8"
+description: This sweeps the LR for width 8 with elastic muadam.
+parameters:
+  dataset-name:
+    value: mipnerf360
+  scene:
+    values:
+      - counter
+  optimizer-lr:
+    min: 0.0001
+    max: 0.5
+  num-train-widths:
+    value: 1
+  num-eval-elastic-widths:
+    value: 1
+  hidden-dim:
+    values:
+      - 8
+  num-widths-to-sample:
+    values:
+      - 1
+  radiance-field.use-elastic:
+    values:
+      - True
+  radiance-field.use-elastic-head:
+    values:
+      - True
+  density-field.use-elastic:
+    values:
+      - True
+  radiance-field.head-depth:
+    values:
+      - 1
+  fused-eval:
+    values:
+      - False
+  use-mup:
+    values:
+      - True
+  radiance-field.base.granular-norm.enabled:
+    values:
+      - False
+  radiance-field.head.granular-norm.enabled:
+    values:
+      - False
+  density-field.base.granular-norm.enabled:
+    values:
+      - False
+  seed:
+    values:
+      - 42
+command:
+  - python
+  - scripts/train/train_elastic_ngp_prop.py
+  - ${args}

@@ -543,14 +543,9 @@ class NGPRadianceField(NGPField):
     def get_param_groups(self):
         elastic_lr_params = []
         non_elastic_lr_params = []
-        params = super().named_parameters()
-        for name, param in params:
-            if "hidden_layers" in name:
-                if "0" in name:
-                    non_elastic_lr_params.append(param)
-                else:
-                    # Only the hidden_layers with inf x inf dimensions have elastic learning rates
-                    elastic_lr_params.append(param)
+        for name, param in self.named_parameters():
+            if "weight" in name:
+                elastic_lr_params.append(param)
             else:
                 non_elastic_lr_params.append(param)
 
