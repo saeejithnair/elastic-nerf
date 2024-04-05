@@ -52,8 +52,9 @@ from elastic_nerf.nerfacc.configs.datasets.mipnerf360 import (
     MipNerf360DatasetPropConfig,
 )
 from elastic_nerf.nerfacc.trainers.base import NGPBaseTrainerConfig, NGPTrainer
-from mup import MuAdam, set_base_shapes
+from mup import set_base_shapes
 import mup
+from elastic_nerf.nerfacc.radiance_fields.optimizers import ElasticMuAdam
 
 
 @dataclass
@@ -207,7 +208,7 @@ class NGPPropTrainer(NGPTrainer):
             for resolution in self.dataset.prop_network_resolutions
         ]
         proposal_networks = self.init_mup_proposal_nets(proposal_networks, aabb.clone())
-        optimizer_type = MuAdam if self.config.use_mup else torch.optim.Adam
+        optimizer_type = ElasticMuAdam if self.config.use_mup else torch.optim.Adam
         print(f"Using optimizer: {optimizer_type}")
         prop_optimizer = optimizer_type(
             itertools.chain(
@@ -437,7 +438,11 @@ class NGPPropTrainer(NGPTrainer):
             self.step
         ]
 
-        proposal_requires_grad = self.proposal_requires_grad_fn(self.step)
+        # Do an update on the first step so that the estimator optimizer gets stepped
+        # once before the estimator LR scheduler starts getting stepped (this is for PyTorch 1.1.0 and onward)
+        proposal_requires_grad = self.proposal_requires_grad_fn(self.step) or (
+            self.step == 0
+        )
         loss_dict = {}
         metrics_dict = {}
         estimator_loss_dict = {}
