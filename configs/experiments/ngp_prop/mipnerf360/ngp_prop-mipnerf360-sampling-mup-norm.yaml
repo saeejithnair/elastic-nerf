@@ -51,6 +51,8 @@ parameters:
   density-field.base.granular-norm.enabled:
     values:
       - True
+  max-steps:
+    value: 80000
   seed:
     values:
       - 42
