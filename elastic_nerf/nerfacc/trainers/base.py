@@ -112,8 +112,8 @@ class NGPBaseTrainerConfig(PrintableConfig):
     """Whether to use elastic loss."""
     use_elastic_lr: bool = False
     """Whether to use elastic learning rate."""
-    optimizer_lr: Optional[float] = None
-    """The optimizer learning rate."""
+    optimizer_lr: Optional[float] = 0.0725
+    """The optimizer learning rate. This was tuned for the Counter scene."""
     use_mup: bool = True
     """Whether to use Maximal Update Parameterization."""
     num_widths_to_sample: int = 1
@@ -319,6 +319,7 @@ class NGPTrainer:
             config=config,
             mode=mode,
         )
+        wandb.watch(list(self.models_to_watch.values()), log="all")
 
         self.exp_config_columns = {
             "Scene": self.config.scene,
