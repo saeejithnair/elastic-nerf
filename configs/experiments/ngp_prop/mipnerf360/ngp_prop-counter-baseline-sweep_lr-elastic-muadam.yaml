@@ -45,13 +45,13 @@ parameters:
       - True
   radiance-field.base.granular-norm.enabled:
     values:
-      - False
+      - True
   radiance-field.head.granular-norm.enabled:
     values:
-      - False
+      - True
   density-field.base.granular-norm.enabled:
     values:
-      - False
+      - True
   seed:
     values:
       - 42

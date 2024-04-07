@@ -319,7 +319,7 @@ class NGPTrainer:
             config=config,
             mode=mode,
         )
-        wandb.watch(list(self.models_to_watch.values()), log="all")
+        # wandb.watch(list(self.models_to_watch.values()), log="all")
 
         self.exp_config_columns = {
             "Scene": self.config.scene,
