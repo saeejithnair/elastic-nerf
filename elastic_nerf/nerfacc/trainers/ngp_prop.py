@@ -21,6 +21,7 @@ import torch.nn.functional as F
 import torchvision
 import tqdm
 import tyro
+from elastic_nerf.nerfacc.radiance_fields.mlp import MuReadout as MuReadout
 from gonas.configs.base_config import InstantiateConfig, PrintableConfig
 from lpips import LPIPS
 from nerfacc.estimators.prop_net import PropNetEstimator, get_proposal_requires_grad_fn
@@ -52,9 +53,10 @@ from elastic_nerf.nerfacc.configs.datasets.mipnerf360 import (
     MipNerf360DatasetPropConfig,
 )
 from elastic_nerf.nerfacc.trainers.base import NGPBaseTrainerConfig, NGPTrainer
-from mup import set_base_shapes
+from elastic_nerf.nerfacc.radiance_fields.shape import set_base_shapes
 import mup
 from elastic_nerf.nerfacc.radiance_fields.optimizers import ElasticMuAdam
+from mup.optim import MuAdam
 
 
 @dataclass
@@ -79,7 +81,7 @@ class NGPPropTrainerConfig(NGPBaseTrainerConfig):
             self.dataset = MipNerf360DatasetPropConfig(scene=self.scene)
         else:
             raise ValueError(f"Unknown dataset {self.dataset_name}")
-        
+
         if self.optimizer_lr is not None:
             self.dataset.optimizer_lr = self.optimizer_lr
 
@@ -148,32 +150,55 @@ class NGPPropTrainer(NGPTrainer):
 
     def initialize_params(self, model):
         for name, param in model.named_parameters():
-            if self.config.use_mup and "weight" in name:
-                if "output_layer" in name:
-                    nonlinearity = "linear"
-                    prefactor = 1.0
+            with torch.no_grad():
+                if self.config.use_mup and "weight" in name:
+                    if "output_layer" in name:
+                        nonlinearity = "linear"
+                        prefactor = 1.0
+                        # with torch.no_grad():
+                        #     param.data = param.data.zero_()
+                        # mup.init.kaiming_normal_(param, nonlinearity=nonlinearity)
+                    else:
+                        nonlinearity = "relu"
+                        prefactor = math.sqrt(2.0)
+                        # mup.init.kaiming_normal_(param, nonlinearity=nonlinearity)
+                    torch.nn.init.normal_(param, mean=0, std=1)
+                    # Apply spectral normalization to the param.
+                    fanin, fanout = mup.init._calculate_fan_in_and_fan_out(param)
+                    with torch.no_grad():
+                        fan_out, fan_in = param.infshape[:2]
+                        # following are needed to accomodate SP models where all infshapes are finite so base_dims are Nones
+                        fan_out_base_dim = fan_out.base_dim or fan_out.dim
+                        fan_in_base_dim = fan_in.base_dim or fan_in.dim
+                        norm_before = torch.linalg.matrix_norm(param, ord=2)
+                        # param.data = (
+                        #     prefactor
+                        #     * (
+                        #         (1 / math.sqrt(fanin))
+                        #         * min(1, math.sqrt(fanout / fanin))
+                        #     )
+                        #     * param.data
+                        #     # / norm_before
+                        # )
+                        scale_factor = math.sqrt(fanout / fanin) / math.sqrt(
+                            fan_out_base_dim / fan_in_base_dim
+                        )
+                        param.data = (
+                            prefactor * scale_factor / norm_before
+                        ) * param.data
+                        print(
+                            f"Initialized {name} with spectral norm. prefactor: {prefactor}, fanout: {fanout}, fanin: {fanin}, ratio: {np.sqrt(fanout / fanin)}, norm_before: {norm_before}, norm_after: {torch.linalg.matrix_norm(param, ord=2)}"
+                        )
+                elif "weight" in name:
+                    if "output_layer" in name:
+                        nonlinearity = "linear"
+                        param.data.zero_()
+                    else:
+                        nonlinearity = "relu"
+                        torch.nn.init.kaiming_normal_(param, nonlinearity=nonlinearity)
                 else:
-                    nonlinearity = "relu"
-                    prefactor = np.sqrt(2.0)
-                torch.nn.init.normal_(param, mean=0, std=1)
-                # Apply spectral normalization to the param.
-                fanin, fanout = mup.init._calculate_fan_in_and_fan_out(param)
-                with torch.no_grad():
-                    param.data = (
-                        prefactor
-                        * np.sqrt(fanout / fanin)
-                        * param.data
-                        / torch.linalg.matrix_norm(param, ord=2)
-                    )
-            elif "weight" in name:
-                if "output_layer" in name:
-                    nonlinearity = "linear"
-                else:
-                    nonlinearity = "relu"
-                torch.nn.init.kaiming_normal_(param, nonlinearity=nonlinearity)
-            else:
-                print(f"Skipping initialization for {name}")
-                continue
+                    print(f"Skipping initialization for {name}")
+                    continue
         return model
 
     def init_mup_radiance_field(self, radiance_field, aabb):
@@ -211,7 +236,7 @@ class NGPPropTrainer(NGPTrainer):
             for resolution in self.dataset.prop_network_resolutions
         ]
         proposal_networks = self.init_mup_proposal_nets(proposal_networks, aabb.clone())
-        optimizer_type = ElasticMuAdam if self.config.use_mup else torch.optim.Adam
+        optimizer_type = MuAdam if self.config.use_mup else torch.optim.Adam
         print(f"Using optimizer: {optimizer_type}")
         prop_optimizer = optimizer_type(
             itertools.chain(
@@ -424,9 +449,13 @@ class NGPPropTrainer(NGPTrainer):
     def update_estimator_every_n_steps(self, loss_dict: Dict[str, torch.Tensor]):
         assert self.estimator.optimizer is not None, "No optimizer is provided."
         if len(loss_dict) > 0:
+            # print(
+            #     f"Updating prop estimator at step {self.step}. Len loss dict: {len(loss_dict)}, keys: {loss_dict.keys()}"
+            # )
             loss = functools.reduce(torch.add, loss_dict.values())
             self.estimator.optimizer.zero_grad()
             loss.backward()
+            # self.normalize_grads(self.estimator.optimizer, norm_type="spectral")
             self.estimator.optimizer.step()
 
         if self.estimator.scheduler is not None:
@@ -446,6 +475,7 @@ class NGPPropTrainer(NGPTrainer):
         proposal_requires_grad = self.proposal_requires_grad_fn(self.step) or (
             self.step == 0
         )
+        # print(f"Proposal requires grad: {proposal_requires_grad} at step {self.step}")
         loss_dict = {}
         metrics_dict = {}
         estimator_loss_dict = {}
@@ -474,9 +504,13 @@ class NGPPropTrainer(NGPTrainer):
         self.update_estimator_every_n_steps(estimator_loss_dict)
 
         loss = functools.reduce(torch.add, loss_dict.values())
+        # Raise error if loss is NaN
+        if torch.isnan(loss):
+            raise ValueError(f"Loss is NaN at step {self.step}")
         self.optimizer.zero_grad()
         # do not unscale it because we are using Adam.
         self.grad_scaler.scale(loss).backward()
+        # self.normalize_grads(self.optimizer, norm_type="spectral")
         self.optimizer.step()
         self.scheduler.step()
         gradient_updated = True

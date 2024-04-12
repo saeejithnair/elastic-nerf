@@ -207,11 +207,11 @@ class GranularNorm(nn.Module):
         nn.init.zeros_(self.beta)
 
     def forward(self, x):
-        active_neurons = x.shape[-1]
         x_normalized = self.normalization_fn(x)
 
         if self.elementwise_affine:
             # Apply a subset of learnable parameters (gamma and beta) based on active_neurons
+            active_neurons = x.shape[-1]
             x_normalized = (
                 self.gamma[:active_neurons] * x_normalized + self.beta[:active_neurons]
             )

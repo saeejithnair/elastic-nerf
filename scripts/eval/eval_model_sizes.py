@@ -136,7 +136,7 @@ ngp_prop_config.num_train_widths = 1
 ngp_prop_config.num_eval_elastic_widths = 1
 ngp_prop_config.hidden_dim = 64
 ngp_prop_trainer = ngp_prop_config.setup()
-modules = ngp_prop_trainer.get_modules_for_eval(ngp_prop_config.hidden_dim)
+modules = ngp_prop_trainer.models_to_watch
 unpacked_modules = {}
 for k, v in modules.items():
     if isinstance(v, Sequence):
@@ -152,7 +152,7 @@ for module_name, module in unpacked_modules.items():
             p = p.unsqueeze(-1)
         norm = torch.linalg.matrix_norm(p, ord=2).item()
         var = p.var().item()
-        print(n, p.shape, f"Norm: {norm:.3f}", f"Var: {var:.3f}")
+        print(n, p.shape, p.infshape.width_mult(), f"Norm: {norm:.3f}", f"Var: {var:.3f}")
 
 # %%
 # widths = range(8, 65, 8)

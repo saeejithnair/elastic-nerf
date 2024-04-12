@@ -7,3 +7,6 @@
 [submodule "third-party/mup"]
 	path = third-party/mup
 	url = git@github.com:saeejithnair/mup.git
+[submodule "third-party/PiSSA"]
+	path = third-party/PiSSA
+	url = https://github.com/GraphPKU/PiSSA.git

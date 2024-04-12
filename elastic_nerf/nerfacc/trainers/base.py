@@ -126,6 +126,8 @@ class NGPBaseTrainerConfig(PrintableConfig):
     """Maximum number of training steps."""
     fused_eval: bool = True
     """Whether to convert elastic modules to TCNN Fused before eval."""
+    enable_eval: bool = True
+    """Whether to enable evaluation."""
     num_eval_all_steps: int = 20000
     """Number of iterations after which to perform evaluation during training."""
     num_checkpoint_steps: int = 5000
@@ -136,6 +138,10 @@ class NGPBaseTrainerConfig(PrintableConfig):
     """Number of iterations after which to log weights and gradients."""
     weights_grads_warmup: int = 1000
     """Number of iterations to wait before logging weights and gradients less frequently."""
+    save_checkpoints: bool = True
+    """Whether to save checkpoints."""
+    save_weights_grads: bool = True
+    """Whether to save weights and gradients."""
     device: str = "cuda:0"
     """The device to use."""
     log_dir: Optional[Path] = None
@@ -565,6 +571,8 @@ class NGPTrainer:
         return preprocessed_images_dict
 
     def log_weights_and_gradients(self):
+        if not self.config.save_weights_grads:
+            return
         # Log weights and gradients for the model asynchronously.
         checkpoints_dir = self.log_dir / "weights_grads"
         checkpoints_dir.mkdir(exist_ok=True, parents=True)
@@ -582,6 +590,8 @@ class NGPTrainer:
             print(f"Saved weights and gradients at step {self.step} to {file_path}")
 
     def log_checkpoint(self):
+        if not self.config.save_checkpoints:
+            return
         # Log checkpoint asynchronously.
         checkpoints_dir = self.log_dir / "checkpoints"
         checkpoints_dir.mkdir(exist_ok=True, parents=True)
@@ -657,17 +667,65 @@ class NGPTrainer:
 
         return module_copy.to(self.device)
 
+    def normalize_grads(
+        self, optimizer, norm_type: Literal["fro", "spectral"] = "spectral"
+    ):
+        """Normalize the gradients of the parameters registered to the optimizer."""
+        count = 0
+        with torch.no_grad():
+            for group in optimizer.param_groups:
+                for p in group["params"]:
+                    if p.infshape.ninf() > 0 and p.grad is not None:
+                        count += 1
+                        if norm_type == "fro":
+                            p.grad.data /= torch.linalg.matrix_norm(
+                                p.grad.data, ord="fro"
+                            )
+                        elif norm_type == "spectral":
+                            p.grad.data /= torch.linalg.matrix_norm(p.grad.data, ord=2)
+                        else:
+                            raise ValueError(f"Unknown norm type {norm_type}")
+        assert count > 0, "No parameters with valid gradients found."
+
     def probe_models(self):
-        print(f"Probing models...")
+        print(f"Probing models at step {self.step}...")
         for name, module in self.models_to_watch.items():
             for n, p in module.named_parameters():
-                if "layer" not in n or "norm" in n:
-                    continue
-                if p.ndim == 1:
-                    p = p.unsqueeze(-1)
-                norm = torch.linalg.matrix_norm(p, ord=2).item()
-                var = p.var().item()
-                print(name, n, p.shape, f"Norm: {norm:.3f}", f"Var: {var:.3f}")
+                with torch.no_grad():
+                    try:
+                        if "layer" not in n or "norm" in n:
+                            continue
+                        if p.ndim == 1:
+                            p = p.unsqueeze(-1)
+                        norm = torch.linalg.matrix_norm(p, ord=2).item()
+                        var = p.var().item()
+                        if p.grad is not None:
+                            grad_norm = torch.linalg.matrix_norm(p.grad, ord=2).item()
+                            grad_var = p.grad.var().item()
+                            print(
+                                name,
+                                n,
+                                p.shape,
+                                math.sqrt(p.shape[0] / p.shape[1]),
+                                f"Weight norm: {norm:.3f}",
+                                f"Var: {var:.3f}",
+                                f"Grad norm: {grad_norm:.3f}",
+                                f"Grad var: {grad_var:.3f}",
+                            )
+                        else:
+                            print(
+                                name,
+                                n,
+                                p.shape,
+                                math.sqrt(p.shape[0] / p.shape[1]),
+                                f"Weight norm: {norm:.3f}",
+                                f"Var: {var:.3f}",
+                            )
+                    except Exception as e:
+                        print(f"Error probing {name} {n}: {e}")
+                        continue
+            print("")
+        print("\n\n")
 
     def get_modules_for_eval(self, elastic_width):
         modules_for_eval = {}
@@ -729,6 +787,8 @@ class NGPTrainer:
 
     @torch.no_grad()
     def eval(self, eval_elastic_widths=None):
+        if not self.config.enable_eval:
+            return
         psnrs_history = {}
         lpips_history = {}
         ssim_history = {}
@@ -875,6 +935,7 @@ class NGPTrainer:
                 # updated because loss was 0.
                 self.log_metrics(metrics_dict, commit=True)
 
+            # self.probe_models()
             self.step += 1
 
         pbar.close()

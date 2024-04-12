@@ -210,6 +210,7 @@ class ElasticMLPWithInputEncoding(torch.nn.Module):
         # print(
         #     f"Encoding config: {encoding_config}, n_input_dims: {input_dim}, n_output_dims: {output_dim}, net_depth: {net_depth}, net_width: {net_width}, skip_layer: None, output_enabled: True"
         # )
+        self.layer_records = {}
         self.encoding = tcnn.Encoding(
             n_input_dims=input_dim, encoding_config=encoding_config
         )
@@ -264,6 +265,12 @@ class ElasticMLPWithInputEncoding(torch.nn.Module):
             kwargs["active_neurons"] = active_neurons
 
         with autocast():
+            # with torch.no_grad():
+            #     self.layer_records[f"input/shape"] = x.shape
+            #     self.layer_records[f"input/frobenius"] = (
+            #         torch.linalg.matrix_norm(x, ord="fro").detach().item()
+            #     )
+            #     self.layer_records[f"input/l1"] = torch.abs(x).mean().detach().item()
             x = self.encoding(x)
             # Pad the output of the encoding with ones to the next
             # highest multiple of 16. Padding with 1 helps the first

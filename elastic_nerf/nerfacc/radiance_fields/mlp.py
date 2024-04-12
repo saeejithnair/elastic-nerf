@@ -18,7 +18,9 @@ from gonas.configs.base_config import FlexibleInstantiateConfig, InstantiateConf
 from typing_extensions import NotRequired, TypedDict
 import tinycudann as tcnn
 from elastic_nerf.modules.elastic_mlp import GranularNorm, GranularNormConfig
-from mup import MuReadout, set_base_shapes
+from torch.nn.init import _calculate_fan_in_and_fan_out
+
+# from mup import MuReadout, set_base_shapes
 import mup
 
 
@@ -180,6 +182,70 @@ NerfMLPHiddenLayers = TypedDict(
 )
 
 
+class MuReadout(nn.Linear):
+    """Drop-in replacement for all output linear layers.
+
+    An "output" linear layer is one that maps from a width dimension (e.g.,
+    `d_model` in a Transformer) to a non-width dimension (e.g., vocab size).
+
+    This layer implements the version of μP with a 1/width multiplier and a
+    constant variance initialization for both weights and biases.
+    """
+
+    def __init__(self, *args, readout_zero_init=False, output_mult=1.0, **kwargs):
+        self.output_mult = output_mult
+        self.readout_zero_init = readout_zero_init
+        super().__init__(*args, **kwargs)
+
+    def reset_parameters(self) -> None:
+        if self.readout_zero_init:
+            self.weight.data[:] = 0
+            if self.bias is not None:
+                self.bias.data[:] = 0
+        else:
+            super().reset_parameters()
+
+    def width_mult(self):
+        assert hasattr(self.weight, "infshape"), (
+            "Please call set_base_shapes(...). If using torch.nn.DataParallel, "
+            "switch to distributed training with "
+            "torch.nn.parallel.DistributedDataParallel instead"
+        )
+        return self.weight.infshape.width_mult()
+
+    def _rescale_parameters(self):
+        """Rescale parameters to convert SP initialization to μP initialization.
+
+        Warning: This method is NOT idempotent and should be called only once
+        unless you know what you are doing.
+        """
+        if hasattr(self, "_has_rescaled_params") and self._has_rescaled_params:
+            raise RuntimeError(
+                "`_rescale_parameters` has been called once before already. "
+                "Unless you know what you are doing, usually you should not be calling `_rescale_parameters` more than once.\n"
+                "If you called `set_base_shapes` on a model loaded from a checkpoint, "
+                "or just want to re-set the base shapes of an existing model, "
+                "make sure to set the flag `rescale_params=False`.\n"
+                "To bypass this error and *still rescale parameters*, set `self._has_rescaled_params=False` before this call."
+            )
+        if self.bias is not None:
+            self.bias.data *= self.width_mult() ** 0.5
+        self.weight.data *= self.width_mult() ** 0.5
+        self._has_rescaled_params = True
+
+    def forward(self, x):
+        # return super().forward(x)
+        # return super().forward(self.output_mult * x)
+        # fanin, fanout = _calculate_fan_in_and_fan_out(self.weight)
+        # # width_mult = math.sqrt(fanout/fanin)
+        # width_mult = fanout / fanin
+        # return super().forward(self.output_mult * x * width_mult)
+        raise NotImplementedError(
+            "Please don't use forward, splice weights and biases explicitly."
+        )
+        return super().forward(self.output_mult * x / self.width_mult())
+
+
 @dataclass
 class ElasticMLPConfig(FlexibleInstantiateConfig):
     _target: Type = field(default_factory=lambda: ElasticMLP)
@@ -264,6 +330,7 @@ class ElasticMLP(nn.Module):
         self.output_activation = output_activation
         self.bias_enabled = bias_enabled
         self.bias_init = bias_init
+        self.layer_records = {}
         if granular_norm is not None and granular_norm.enabled:
             self.use_granular_norm = True
             self.granular_norm = granular_norm
@@ -305,6 +372,8 @@ class ElasticMLP(nn.Module):
             self.output_layer = MuReadout(
                 in_features, self.output_dim, bias=bias_enabled
             )
+            self.fanout_base_dim = int(self.output_dim)
+
         else:
             # Note that while the assignment RHS is labelled as `in_features`,
             # this was last set to `layer_width` in the loop above.
@@ -354,6 +423,46 @@ class ElasticMLP(nn.Module):
                 output_layer=pseudo_output_layer,
             )
             first_layer = False
+            # with torch.no_grad():
+            #     tmp = x.detach().clone().to(torch.float32)
+            #     fanin, fanout = _calculate_fan_in_and_fan_out(W)
+            #     self.layer_records[f"hidden_layers.{i}/input/spectral"] = (
+            #         torch.linalg.matrix_norm(tmp, ord=2).detach().item()
+            #     )
+            #     self.layer_records[f"hidden_layers.{i}/param/spectral"] = (
+            #         torch.linalg.matrix_norm(W, ord=2).detach().item()
+            #     )
+            #     self.layer_records[f"hidden_layers.{i}/fanout"] = fanout
+            #     self.layer_records[f"hidden_layers.{i}/fanin"] = fanin
+            #     self.layer_records[f"hidden_layers.{i}/input/frobenius"] = (
+            #         torch.linalg.matrix_norm(tmp, ord="fro").detach().item()
+            #     )
+            #     self.layer_records[f"hidden_layers.{i}/param/frobenius"] = (
+            #         torch.linalg.matrix_norm(W, ord=2).detach().item()
+            #     )
+            #     self.layer_records[f"hidden_layers.{i}/input/l1"] = (
+            #         torch.abs(tmp).mean().detach().item()
+            #     )
+            #     self.layer_records[f"hidden_layers.{i}/input/std"] = (
+            #         tmp.std().detach().item()
+            #     )
+            #     self.layer_records[f"hidden_layers.{i}/param/l1"] = (
+            #         torch.abs(W).mean().detach().item()
+            #     )
+            #     self.layer_records[f"hidden_layers.{i}/param/std"] = (
+            #         W.std().detach().item()
+            #     )
+            #     if layer.weight.grad is not None:
+            #         self.layer_records[f"hidden_layers.{i}/grad/frobenius"] = (
+            #             torch.linalg.matrix_norm(layer.weight.grad, ord="fro")
+            #             .detach()
+            #             .item()
+            #         )
+            #         self.layer_records[f"hidden_layers.{i}/grad/spectral"] = (
+            #             torch.linalg.matrix_norm(layer.weight.grad, ord=2)
+            #             .detach()
+            #             .item()
+            #         )
 
             if use_granular_norm:
                 norm = self.norm_layers[i]
@@ -363,6 +472,20 @@ class ElasticMLP(nn.Module):
             else:
                 x = linear_layer_muladd_act(x, W, b, self.hidden_activation)
 
+            # with torch.no_grad():
+            #     tmp = x.detach().clone().to(torch.float32)
+            #     self.layer_records[f"hidden_layers.{i}/output/spectral"] = (
+            #         torch.linalg.matrix_norm(tmp, ord=2).detach().item()
+            #     )
+            #     self.layer_records[f"hidden_layers.{i}/output/frobenius"] = (
+            #         torch.linalg.matrix_norm(tmp, ord="fro").detach().item()
+            #     )
+            #     self.layer_records[f"hidden_layers.{i}/output/l1"] = (
+            #         torch.abs(tmp).mean().detach().item()
+            #     )
+            #     self.layer_records[f"hidden_layers.{i}/output/std"] = (
+            #         tmp.std().detach().item()
+            #     )
             if (self.skip_layer is not None) and (i % self.skip_layer == 0) and (i > 0):
                 x = torch.cat([x, inputs], dim=-1)
                 skip_layer = True
@@ -377,6 +500,11 @@ class ElasticMLP(nn.Module):
         if active_neurons is None:
             active_neurons = self.net_width
 
+        # with torch.no_grad():
+        #     self.layer_records[f"input/frobenius"] = (
+        #         torch.linalg.matrix_norm(x, ord="fro").detach().item()
+        #     )
+        #     self.layer_records[f"input/shape"] = x.shape
         x = self.forward_hidden(
             x, active_neurons, self.input_dim, self.use_granular_norm
         )
@@ -390,8 +518,77 @@ class ElasticMLP(nn.Module):
                 skip_layer=False,
                 output_layer=True,
             )
-
+            fanin, fanout = _calculate_fan_in_and_fan_out(W_out)
+            # with torch.no_grad():
+            #     tmp = x.detach().clone().to(torch.float32)
+            #     self.layer_records[f"output_layer/input/spectral"] = (
+            #         torch.linalg.matrix_norm(tmp, ord=2).detach().item()
+            #     )
+            #     self.layer_records[f"output_layer/param/spectral"] = (
+            #         torch.linalg.matrix_norm(W_out, ord=2).detach().item()
+            #     )
+            #     self.layer_records[f"output_layer/fanout"] = fanout
+            #     self.layer_records[f"output_layer/fanin"] = fanin
+            #     self.layer_records[f"output_layer/input/frobenius"] = (
+            #         torch.linalg.matrix_norm(tmp, ord="fro").detach().item()
+            #     )
+            #     self.layer_records[f"output_layer/param/frobenius"] = (
+            #         torch.linalg.matrix_norm(W_out, ord="fro").detach().item()
+            #     )
+            #     self.layer_records[f"output_layer/input/l1"] = (
+            #         torch.abs(tmp).mean().detach().item()
+            #     )
+            #     self.layer_records[f"output_layer/input/std"] = (
+            #         tmp.std().detach().item()
+            #     )
+            #     self.layer_records[f"output_layer/param/l1"] = (
+            #         torch.abs(W_out).mean().detach().item()
+            #     )
+            #     self.layer_records[f"output_layer/param/std"] = (
+            #         W_out.std().detach().item()
+            #     )
+            #     if self.output_layer.weight.grad is not None:
+            #         self.layer_records[f"output_layer/grad/frobenius"] = (
+            #             torch.linalg.matrix_norm(
+            #                 self.output_layer.weight.grad, ord="fro"
+            #             )
+            #             .detach()
+            #             .item()
+            #         )
+            #         self.layer_records[f"output_layer/grad/spectral"] = (
+            #             torch.linalg.matrix_norm(self.output_layer.weight.grad, ord=2)
+            #             .detach()
+            #             .item()
+            #         )
+            # fanin, fanout = _calculate_fan_in_and_fan_out(W_out)
+            # x = (fanout / fanin) * x
+            fanin, fanout = _calculate_fan_in_and_fan_out(W_out)
+            # TODO: Don't hardcode, get width dynamically
+            fan_in_base_dim = 8
+            output_width_mult = (fanout / fanin) / (
+                self.fanout_base_dim / fan_in_base_dim
+            )
+            x = x / output_width_mult
+            # fanin, fanout = _calculate_fan_in_and_fan_out(W_out)
+            # TODO: Don't hardcode, get base width dynamically
+            # base_fanin = 8
+            # width_mult = fanin / base_fanin
+            # x = x / width_mult
             x = linear_layer_muladd_act(x, W_out, b, self.output_activation)
+            # with torch.no_grad():
+            #     tmp = x.detach().clone().to(torch.float32)
+            #     self.layer_records[f"output_layer/output/spectral"] = (
+            #         torch.linalg.matrix_norm(tmp, ord=2).detach().item()
+            #     )
+            #     self.layer_records[f"output_layer/output/frobenius"] = (
+            #         torch.linalg.matrix_norm(tmp, ord="fro").detach().item()
+            #     )
+            #     self.layer_records[f"output_layer/output/l1"] = (
+            #         torch.abs(tmp).mean().detach().item()
+            #     )
+            #     self.layer_records[f"output_layer/output/std"] = (
+            #         tmp.std().detach().item()
+            #     )
 
         return x
 
