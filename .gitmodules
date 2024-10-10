@@ -7,3 +7,6 @@
 [submodule "third-party/mup"]
 	path = third-party/mup
 	url = git@github.com:saeejithnair/mup.git
+[submodule "third-party/nerfstudio"]
+	path = third-party/nerfstudio
+	url = git@github.com:saeejithnair/nerfstudio.git
