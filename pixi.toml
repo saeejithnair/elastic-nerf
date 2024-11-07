@@ -18,7 +18,7 @@ hloc-install = {cmd="python -m uv pip install --no-build-isolation -e .", cwd = 
 
 
 nerfstudio-install = {cmd="python -c 'import nerfstudio' || python -m uv pip install nerfstudio==1.1.4", depends_on=["uv-install", "nerfacc-install"]}
-post-install = {cmd="pwd", depends_on=["nerfacc-install", "tcnn-install", "hloc-install"]}
+post-install = {cmd="pwd", depends_on=["nerfacc-install", "tcnn-install", "hloc-install", "nerfstudio-install"]}
 
 
 [dependencies]
