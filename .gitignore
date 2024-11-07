@@ -209,3 +209,5 @@ checklink/cookies.txt
 *.csv
 *.pt
 **/results/*.html
+
+.pixi/
