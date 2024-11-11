@@ -15,6 +15,7 @@
 """
 Code to train model.
 """
+
 from __future__ import annotations
 
 import dataclasses
@@ -29,6 +30,13 @@ from threading import Lock
 from typing import Dict, List, Literal, Optional, Tuple, Type, cast
 
 import torch
+from torch.cuda.amp.grad_scaler import GradScaler
+
+import wandb
+from rich import box, style
+from rich.panel import Panel
+from rich.table import Table
+
 from nerfstudio.configs.experiment_config import ExperimentConfig
 from nerfstudio.data.datamanagers.base_datamanager import VanillaDataManager
 from nerfstudio.engine.callbacks import (
@@ -48,14 +56,10 @@ from nerfstudio.utils.decorators import (
 from nerfstudio.utils.misc import step_check
 from nerfstudio.utils.rich_utils import CONSOLE
 from nerfstudio.utils.writer import EventName, TimeWriter
-from nerfstudio.viewer.server.viewer_state import ViewerState
-from nerfstudio.viewer_beta.viewer import Viewer as ViewerBetaState
-from rich import box, style
-from rich.panel import Panel
-from rich.table import Table
-from torch.cuda.amp.grad_scaler import GradScaler
 
-import wandb
+# Updated viewer imports for Nerfstudio 1.1.4
+from nerfstudio.viewer.viewer import Viewer as ViewerState  # New Viewer
+from nerfstudio.viewer_legacy.server.viewer_state import ViewerLegacyState  # Deprecated Legacy Viewer
 
 TRAIN_INTERATION_OUTPUT = Tuple[
     torch.Tensor, Dict[str, torch.Tensor], Dict[str, torch.Tensor]
@@ -98,7 +102,7 @@ class ElasticTrainerConfig(TrainerConfig):
     """Path to checkpoint file."""
     log_gradients: bool = False
     """Optionally log gradients during training"""
-    gradient_accumulation_steps: int = 1
+    gradient_accumulation_steps: Dict[str, int] = field(default_factory=lambda: {})
     """Number of steps to accumulate gradients over."""
 
 
@@ -138,7 +142,7 @@ class ElasticTrainer(Trainer):
         self.mixed_precision: bool = self.config.mixed_precision
         self.use_grad_scaler: bool = self.mixed_precision or self.config.use_grad_scaler
         self.training_state: Literal["training", "paused", "completed"] = "training"
-        self.gradient_accumulation_steps: int = self.config.gradient_accumulation_steps
+        self.gradient_accumulation_steps: Dict[str, int] = self.config.gradient_accumulation_steps
 
         if self.device == "cpu":
             self.mixed_precision = False
@@ -186,22 +190,25 @@ class ElasticTrainer(Trainer):
                 pipeline=self.pipeline,
                 trainer=self,
                 train_lock=self.train_lock,
+                share=self.config.viewer.make_share_url,
             )
-            banner_messages = [f"Viewer at: {self.viewer_state.viewer_url}"]
-        if self.config.is_viewer_beta_enabled() and self.local_rank == 0:
+            banner_messages = self.viewer_state.viewer_info
+
+        # Optionally support Legacy Viewer if needed
+        if self.config.is_viewer_legacy_enabled() and self.local_rank == 0:
             datapath = self.config.data
             if datapath is None:
                 datapath = self.base_dir
-            self.viewer_state = ViewerBetaState(
+            self.viewer_state = ViewerLegacyState(
                 self.config.viewer,
                 log_filename=viewer_log_path,
                 datapath=datapath,
                 pipeline=self.pipeline,
                 trainer=self,
                 train_lock=self.train_lock,
-                share=self.config.viewer.make_share_url,
             )
-            banner_messages = [f"Viewer Beta at: {self.viewer_state.viewer_url}"]
+            banner_messages = [f"Legacy viewer at: {self.viewer_state.viewer_url}"]
+
         self._check_viewer_warnings()
 
         self._load_checkpoint()
@@ -211,6 +218,7 @@ class ElasticTrainer(Trainer):
                 optimizers=self.optimizers,
                 grad_scaler=self.grad_scaler,
                 pipeline=self.pipeline,
+                trainer=self,  # Ensure trainer is passed if required
             )
         )
 
@@ -300,7 +308,7 @@ class ElasticTrainer(Trainer):
                 for val_type in self.wandb_val_table_expected_groups
             ):
                 self.wandb_tables[table_type] = wandb.Table(
-                    columns=self.wandb_table_columns["Val Overview"]
+                    columns=self.wandb_table_columns["Validation Overview"]
                 )
 
         # Check if all the expected val types are in the table queue
@@ -332,7 +340,7 @@ class ElasticTrainer(Trainer):
         """Train the model."""
         assert (
             self.pipeline.datamanager.train_dataset is not None
-        ), "Missing DatsetInputs"
+        ), "Missing DatasetInputs"
 
         # don't want to call save_dataparser_transform if pipeline's datamanager does not have a dataparser
         if isinstance(self.pipeline.datamanager, VanillaDataManager):
@@ -408,6 +416,7 @@ class ElasticTrainer(Trainer):
                         step=step,
                     )
 
+                    # Uncomment and adjust if you want to retain training overview logging with wandb
                     # if self.config.is_wandb_enabled():
                     #     if not train_table_initialized:
                     #         train_table_initialized = True
@@ -435,7 +444,6 @@ class ElasticTrainer(Trainer):
                     #             wandb_train_table_data.append(None)
 
                     #     print(train_table_columns)
-
                     #     print(wandb_train_table_data)
                     #     self.wandb_tables["Training Overview"].add_data(
                     #         *wandb_train_table_data
@@ -493,7 +501,7 @@ class ElasticTrainer(Trainer):
     def _check_viewer_warnings(self) -> None:
         """Helper to print out any warnings regarding the way the viewer/loggers are enabled"""
         if (
-            (self.config.is_viewer_enabled() or self.config.is_viewer_beta_enabled())
+            (self.config.is_viewer_enabled() or self.config.is_viewer_legacy_enabled())
             and not self.config.is_tensorboard_enabled()
             and not self.config.is_wandb_enabled()
             and not self.config.is_comet_enabled()
@@ -583,7 +591,7 @@ class ElasticTrainer(Trainer):
             assert load_path.exists(), f"Checkpoint {load_path} does not exist"
             loaded_state = torch.load(load_path, map_location="cpu")
             self._start_step = loaded_state["step"] + 1
-            # load the checkpoints for pipeline, optimizers, and gradient scalar
+            # load the checkpoints for pipeline, optimizers, and gradient scaler
             self.pipeline.load_pipeline(loaded_state["pipeline"], loaded_state["step"])
             self.optimizers.load_optimizers(loaded_state["optimizers"])
             if "schedulers" in loaded_state and self.config.load_scheduler:
@@ -596,7 +604,7 @@ class ElasticTrainer(Trainer):
             ), f"Checkpoint {load_checkpoint} does not exist"
             loaded_state = torch.load(load_checkpoint, map_location="cpu")
             self._start_step = loaded_state["step"] + 1
-            # load the checkpoints for pipeline, optimizers, and gradient scalar
+            # load the checkpoints for pipeline, optimizers, and gradient scaler
             self.pipeline.load_pipeline(loaded_state["pipeline"], loaded_state["step"])
             self.optimizers.load_optimizers(loaded_state["optimizers"])
             if "schedulers" in loaded_state and self.config.load_scheduler:
@@ -649,22 +657,23 @@ class ElasticTrainer(Trainer):
             step: Current training step.
         """
 
-        self.optimizers.zero_grad_all()
+        needs_zero = [
+            group for group in self.optimizers.parameters.keys() if step % self.gradient_accumulation_steps[group] == 0
+        ]
+        self.optimizers.zero_grad_some(needs_zero)
         cpu_or_cuda_str: str = self.device.split(":")[0]
-        assert (
-            self.gradient_accumulation_steps > 0
-        ), f"gradient_accumulation_steps must be > 0, not {self.gradient_accumulation_steps}"
-        for _ in range(self.gradient_accumulation_steps):
-            with torch.autocast(
-                device_type=cpu_or_cuda_str, enabled=self.mixed_precision
-            ):
-                _, loss_dict, metrics_dict = self.pipeline.get_train_loss_dict(
-                    step=step
-                )
-                loss = functools.reduce(torch.add, loss_dict.values())
-                loss /= self.gradient_accumulation_steps
-            self.grad_scaler.scale(loss).backward()  # type: ignore
-        self.optimizers.optimizer_scaler_step_all(self.grad_scaler)
+        cpu_or_cuda_str = "cpu" if cpu_or_cuda_str == "mps" else cpu_or_cuda_str
+
+        with torch.autocast(device_type=cpu_or_cuda_str, enabled=self.mixed_precision):
+            _, loss_dict, metrics_dict = self.pipeline.get_train_loss_dict(step=step)
+            loss = functools.reduce(torch.add, loss_dict.values())
+        self.grad_scaler.scale(loss).backward()  # type: ignore
+        needs_step = [
+            group
+            for group in self.optimizers.parameters.keys()
+            if step % self.gradient_accumulation_steps[group] == self.gradient_accumulation_steps[group] - 1
+        ]
+        self.optimizers.optimizer_scaler_step_some(self.grad_scaler, needs_step)
 
         if self.config.log_gradients:
             total_grad = 0
@@ -767,6 +776,7 @@ class ElasticTrainer(Trainer):
                 step=step,
             )
 
+            # Uncomment and adjust if you want to retain test overview logging with wandb
             # if self.config.is_wandb_enabled():
             #     test_table_columns = [
             #         "step",

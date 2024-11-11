@@ -36,7 +36,7 @@ import os
 import random
 import socket
 import traceback
-from dataclasses import asdict, dataclass, fields
+from dataclasses import asdict, dataclass, fields, field
 from datetime import timedelta
 from typing import Any, Callable, Dict, Literal, Optional
 
@@ -288,10 +288,20 @@ def main(config: ExtendedTrainerConfig) -> None:
             CONSOLE.log(f"Saving checkpoint {checkpoint} to wandb...")
             wandb.save(str(checkpoint))  # type: ignore
 
+def get_hostname() -> str:
+    """
+    Retrieves the hostname from the environment variable 'HOSTNAME'.
+    If 'HOSTNAME' is not set, falls back to using socket.gethostname().
+    
+    Returns:
+        str: The hostname of the machine.
+    """
+    return os.environ.get("HOSTNAME", socket.gethostname())
+
 
 @dataclass
 class ExtendedMachineConfig(MachineConfig):
-    host_machine: str = os.environ["HOSTNAME"]
+    host_machine: str = field(default_factory=get_hostname)
     """Name of the host machine"""
 
     @staticmethod
