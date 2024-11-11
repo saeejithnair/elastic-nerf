@@ -16,6 +16,13 @@ git clone https://github.com/saeejithnair/elastic-nerf.git
 git submodule update --init --recursive
 ```
 
+## Pixi
+```bash
+curl -fsSL https://pixi.sh/install.sh | bash
+pixi run post-install
+pixi shell
+```
+
 ### Initialize Workspace
 
 Run the initialization script at the root of the directory. This will generate an **.env** file in the repo root which will be sourced by docker compose and hold your user specific configurations and secret keys for logging and tracking experiments.
