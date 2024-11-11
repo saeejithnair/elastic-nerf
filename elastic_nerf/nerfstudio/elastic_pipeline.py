@@ -1,24 +1,17 @@
 from __future__ import annotations
 
-import typing
-from abc import abstractmethod
 from dataclasses import dataclass, field
 from pathlib import Path
 from time import time
-from typing import Any, Dict, List, Literal, Mapping, Optional, Tuple, Type, Union, cast
+from typing import Any, Dict, Optional, Tuple, Type
 
 import torch
-import torch.distributed as dist
-from nerfstudio.configs import base_config as cfg
 from nerfstudio.data.datamanagers.base_datamanager import (
-    DataManager,
     DataManagerConfig,
     VanillaDataManager,
 )
-from nerfstudio.engine.callbacks import TrainingCallback, TrainingCallbackAttributes
 from nerfstudio.models.base_model import Model, ModelConfig
 from nerfstudio.pipelines.base_pipeline import (
-    Pipeline,
     VanillaPipeline,
     VanillaPipelineConfig,
 )
@@ -31,10 +24,6 @@ from rich.progress import (
     TextColumn,
     TimeElapsedColumn,
 )
-from torch import nn
-from torch.cuda.amp.grad_scaler import GradScaler
-from torch.nn import Parameter
-from torch.nn.parallel import DistributedDataParallel as DDP
 
 
 @dataclass

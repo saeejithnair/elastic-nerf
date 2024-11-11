@@ -19,8 +19,6 @@ NeRF implementation that combines many recent advancements.
 from __future__ import annotations
 
 import math
-import random
-from collections import defaultdict
 from dataclasses import dataclass, field
 from typing import Dict, List, Literal, Optional, Tuple, Type
 
@@ -29,7 +27,6 @@ import numpy as np
 import torch
 import torch.nn as nn
 from elastic_nerf.modules.elastic_nerfacto_field import ElasticNerfactoField
-from gonas.utils import misc_utils as mu
 from nerfstudio.cameras.rays import RayBundle, RaySamples
 from nerfstudio.engine.callbacks import (
     TrainingCallback,
@@ -39,7 +36,6 @@ from nerfstudio.engine.callbacks import (
 from nerfstudio.field_components.field_heads import FieldHeadNames
 from nerfstudio.field_components.spatial_distortions import SceneContraction
 from nerfstudio.fields.density_fields import HashMLPDensityField
-from nerfstudio.fields.nerfacto_field import NerfactoField
 from nerfstudio.model_components.losses import (
     MSELoss,
     distortion_loss,
@@ -519,9 +515,7 @@ class ElasticNerfactoModel(Model):
                 0,
             )
         elif self.config.granularities_sample_prob == "matroyshka":
-            weights = torch.tensor(
-                [math.sqrt(2**i) for i in range(num_granularities)]
-            )
+            weights = torch.tensor([math.sqrt(2**i) for i in range(num_granularities)])
         elif self.config.granularities_sample_prob == "matroyshka-reverse":
             weights = torch.tensor(
                 [math.sqrt(2**i) for i in range(num_granularities)]
@@ -575,10 +569,10 @@ class ElasticNerfactoModel(Model):
         for granularity in self.eval_granularities:
             granularity = int(granularity)
             granularity_label = self.get_granularity_label(granularity)
-            elastic_weight_norms_dict[
-                granularity_label
-            ] = self.field.elastic_mlp.compute_active_weight_norm(
-                int(self.config.hidden_dim // granularity)
+            elastic_weight_norms_dict[granularity_label] = (
+                self.field.elastic_mlp.compute_active_weight_norm(
+                    int(self.config.hidden_dim // granularity)
+                )
             )
 
         elastic_weight_heatmaps = pu.generate_mlp_heatmap(
@@ -599,10 +593,9 @@ class ElasticNerfactoModel(Model):
 
         loss_dict["rgb_loss"] = self.rgb_loss(gt_rgb, pred_rgb)
         if self.training:
-            loss_dict[
-                "interlevel_loss"
-            ] = self.config.interlevel_loss_mult * interlevel_loss(
-                outputs["weights_list"], outputs["ray_samples_list"]
+            loss_dict["interlevel_loss"] = (
+                self.config.interlevel_loss_mult
+                * interlevel_loss(outputs["weights_list"], outputs["ray_samples_list"])
             )
             assert metrics_dict is not None and "distortion" in metrics_dict
             loss_dict["distortion_loss"] = (
@@ -610,17 +603,15 @@ class ElasticNerfactoModel(Model):
             )
             if self.config.predict_normals:
                 # orientation loss for computed normals
-                loss_dict[
-                    "orientation_loss"
-                ] = self.config.orientation_loss_mult * torch.mean(
-                    outputs["rendered_orientation_loss"]
+                loss_dict["orientation_loss"] = (
+                    self.config.orientation_loss_mult
+                    * torch.mean(outputs["rendered_orientation_loss"])
                 )
 
                 # ground truth supervision for normals
-                loss_dict[
-                    "pred_normal_loss"
-                ] = self.config.pred_normal_loss_mult * torch.mean(
-                    outputs["rendered_pred_normal_loss"]
+                loss_dict["pred_normal_loss"] = (
+                    self.config.pred_normal_loss_mult
+                    * torch.mean(outputs["rendered_pred_normal_loss"])
                 )
         return loss_dict
 

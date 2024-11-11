@@ -20,7 +20,6 @@ from __future__ import annotations
 
 import dataclasses
 import functools
-import glob
 import os
 import time
 from collections import defaultdict
@@ -37,7 +36,6 @@ from rich import box, style
 from rich.panel import Panel
 from rich.table import Table
 
-from nerfstudio.configs.experiment_config import ExperimentConfig
 from nerfstudio.data.datamanagers.base_datamanager import VanillaDataManager
 from nerfstudio.engine.callbacks import (
     TrainingCallback,
@@ -59,7 +57,9 @@ from nerfstudio.utils.writer import EventName, TimeWriter
 
 # Updated viewer imports for Nerfstudio 1.1.4
 from nerfstudio.viewer.viewer import Viewer as ViewerState  # New Viewer
-from nerfstudio.viewer_legacy.server.viewer_state import ViewerLegacyState  # Deprecated Legacy Viewer
+from nerfstudio.viewer_legacy.server.viewer_state import (
+    ViewerLegacyState,
+)  # Deprecated Legacy Viewer
 
 TRAIN_INTERATION_OUTPUT = Tuple[
     torch.Tensor, Dict[str, torch.Tensor], Dict[str, torch.Tensor]
@@ -142,7 +142,9 @@ class ElasticTrainer(Trainer):
         self.mixed_precision: bool = self.config.mixed_precision
         self.use_grad_scaler: bool = self.mixed_precision or self.config.use_grad_scaler
         self.training_state: Literal["training", "paused", "completed"] = "training"
-        self.gradient_accumulation_steps: Dict[str, int] = self.config.gradient_accumulation_steps
+        self.gradient_accumulation_steps: Dict[str, int] = (
+            self.config.gradient_accumulation_steps
+        )
 
         if self.device == "cpu":
             self.mixed_precision = False
@@ -334,7 +336,7 @@ class ElasticTrainer(Trainer):
                 self.wandb_tables[table_type].add_data(**row_data)
             # Reset the table queue
             self.wandb_val_table_queue = defaultdict(list)
-            wandb.log({f"Validation Overview": self.wandb_tables[table_type]})
+            wandb.log({"Validation Overview": self.wandb_tables[table_type]})
 
     def train(self) -> None:
         """Train the model."""
@@ -350,8 +352,8 @@ class ElasticTrainer(Trainer):
 
         self._init_viewer_state()
 
-        train_table_initialized = False
-        eval_table_initialized = False
+        # train_table_initialized = False
+        # eval_table_initialized = False
         with TimeWriter(writer, EventName.TOTAL_TRAIN_TIME):
             num_iterations = self.config.max_num_iterations
             step = 0
@@ -658,7 +660,9 @@ class ElasticTrainer(Trainer):
         """
 
         needs_zero = [
-            group for group in self.optimizers.parameters.keys() if step % self.gradient_accumulation_steps[group] == 0
+            group
+            for group in self.optimizers.parameters.keys()
+            if step % self.gradient_accumulation_steps[group] == 0
         ]
         self.optimizers.zero_grad_some(needs_zero)
         cpu_or_cuda_str: str = self.device.split(":")[0]
@@ -671,7 +675,8 @@ class ElasticTrainer(Trainer):
         needs_step = [
             group
             for group in self.optimizers.parameters.keys()
-            if step % self.gradient_accumulation_steps[group] == self.gradient_accumulation_steps[group] - 1
+            if step % self.gradient_accumulation_steps[group]
+            == self.gradient_accumulation_steps[group] - 1
         ]
         self.optimizers.optimizer_scaler_step_some(self.grad_scaler, needs_step)
 

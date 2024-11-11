@@ -31,12 +31,11 @@ subcommand:
 
 from __future__ import annotations
 
-import glob
 import os
 import random
 import socket
 import traceback
-from dataclasses import asdict, dataclass, fields, field
+from dataclasses import dataclass, fields, field
 from datetime import timedelta
 from typing import Any, Callable, Dict, Literal, Optional
 
@@ -51,7 +50,6 @@ from elastic_nerf.utils import logging_utils as lu
 from nerfstudio.configs.base_config import MachineConfig
 from nerfstudio.configs.config_utils import convert_markup_to_ansi
 from nerfstudio.configs.method_configs import (
-    AnnotatedBaseConfigUnion,
     all_descriptions,
     all_methods,
 )
@@ -288,11 +286,12 @@ def main(config: ExtendedTrainerConfig) -> None:
             CONSOLE.log(f"Saving checkpoint {checkpoint} to wandb...")
             wandb.save(str(checkpoint))  # type: ignore
 
+
 def get_hostname() -> str:
     """
     Retrieves the hostname from the environment variable 'HOSTNAME'.
     If 'HOSTNAME' is not set, falls back to using socket.gethostname().
-    
+
     Returns:
         str: The hostname of the machine.
     """
@@ -308,9 +307,9 @@ class ExtendedMachineConfig(MachineConfig):
     def from_base(config: MachineConfig) -> ExtendedMachineConfig:
         """Converts a base configuration to an extended configuration."""
         extended_config = ExtendedMachineConfig()
-        for field in fields(MachineConfig):
-            field_value = getattr(config, field.name)
-            setattr(extended_config, field.name, field_value)
+        for f in fields(MachineConfig):
+            field_value = getattr(config, f.name)
+            setattr(extended_config, f.name, field_value)
         return extended_config
 
 
@@ -325,17 +324,17 @@ class ExtendedTrainerConfig(ElasticTrainerConfig, TrainerConfig):
     def from_base(config: TrainerConfig) -> ExtendedTrainerConfig:
         """Converts a base configuration to an extended configuration."""
         extended_config = ExtendedTrainerConfig()
-        for field in fields(type(config)):
-            field_value = getattr(config, field.name)
+        for f in fields(type(config)):
+            field_value = getattr(config, f.name)
             if isinstance(field_value, MachineConfig):
                 # Create a new ExtendedMachineConfig from the base MachineConfig
                 setattr(
                     extended_config,
-                    field.name,
+                    f.name,
                     ExtendedMachineConfig.from_base(field_value),
                 )
             else:
-                setattr(extended_config, field.name, field_value)
+                setattr(extended_config, f.name, field_value)
 
         return extended_config
 
