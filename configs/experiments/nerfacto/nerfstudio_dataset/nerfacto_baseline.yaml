@@ -1,0 +1,38 @@
+name: elastic_nerf-baselines-nerfacto-nerfstudio_scenes
+project: elastic-nerf
+entity: uwvip
+method: grid
+description: This performs a sweep over the nerfstudio dataset with the nerfacto model.
+parameters:
+  method:
+    value: nerfacto
+  scene:
+    values:
+      - bww_entrance
+      - campanile
+      - desolation
+      - library
+      - poster
+      - redwoods2
+      - storefront
+      - vegetation
+      - Egypt
+      - person
+      - kitchen
+      - plane
+      - dozer
+      - floating-tree
+      - aspen
+      - stump
+      - sculpture
+      - Giannini-Hall
+  experiment-name:
+    value: elastic_nerf-baselines-nerfacto-nerfstudio_scenes
+  dataset:
+    value: nerfstudio
+  max-num-iterations:
+    value: 30000
+command:
+  - bash
+  - scripts/train/nerfstudio/train.sh
+  - ${args}

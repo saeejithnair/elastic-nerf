@@ -52,9 +52,9 @@ fi
 [[ -z $NERFSTUDIO_CACHE_DIR ]] && \
     error_exit "Environment variable NERFSTUDIO_CACHE_DIR has not been set."
 
-# If NERFSTUDIO_CACHE_DIR does not exist, throw an error
+# If NERFSTUDIO_CACHE_DIR does not exist, set the value to the default
 [[ ! -d $NERFSTUDIO_CACHE_DIR ]] && \
-    error_exit "Directory $NERFSTUDIO_CACHE_DIR does not exist."
+    NERFSTUDIO_CACHE_DIR="/nfs0/shared/nerf/nerfstudio"
 
 # Compose the dataset directory path
 export PATH_TO_SCENE_DIR="$NERFSTUDIO_CACHE_DIR/data/$dataset/$scene"
@@ -148,7 +148,7 @@ args=(
 )
 
 # Build the command string for train.py
-cmd="python src/gen-nerf/scripts/train.py ${args[@]}"
+cmd="python scripts/train/nerfstudio/train.py ${args[@]}"
 
 # Echo the command string
 echo "Running command: $cmd"

@@ -23,6 +23,17 @@ pixi run post-install
 pixi shell
 ```
 
+### Creating an Experiment
+To create an experiment, define a wandb config file (e.g. see configs/experiments/) and run the following command:
+```
+wandb sweep configs/experiments/{experiment-name}.yaml
+```
+
+To run the experiment, run the following command from the root of the repo:
+```
+wandb agent {entity-name}/{project-name}/{experiment-name}
+```
+
 ### Initialize Workspace
 
 Run the initialization script at the root of the directory. This will generate an **.env** file in the repo root which will be sourced by docker compose and hold your user specific configurations and secret keys for logging and tracking experiments.
